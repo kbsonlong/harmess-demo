@@ -16,7 +16,8 @@ description: "对 Kubernetes 集群做巡检与健康检查，输出问题清单
 - 沙箱在巡检开始前已由系统创建；不要尝试创建/修改任何 RBAC、ServiceAccount、Role/ClusterRole、(Cluster)RoleBinding。
 - 若发现权限不足（命令返回 Forbidden/Unauthorized，或 `kubectl auth can-i ...` 返回 no），跳过当前检查项：
   - 在报告中记录：缺少的权限（资源/动词/作用域）+ 对应失败证据（关键 stderr 片段即可）
-  - 给出管理员处理建议：对固定 Role/ClusterRole 进行授权（不在 Agent 内提权处理）
+  - 给出管理员处理建议：对固定 Role/ClusterRole 进行授权（不在 Agent 内提权处理）。
+- 最终输出仅包含巡检报告正文，且必须是最后一条消息，不要在报告后追加总结或完成提示。
 
 ## 适用场景（触发条件）
 

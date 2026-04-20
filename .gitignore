@@ -10,4 +10,5 @@ wheels/
 .venv
 
 .env
-runs/run-019da9ad-2299-7f33-8416-78c0f6a373ab.json
+runs/
+reports/
