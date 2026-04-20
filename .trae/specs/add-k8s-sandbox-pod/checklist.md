@@ -1,6 +1,6 @@
-- [ ] 能通过配置的集群访问方式（KUBECONFIG 或 in-cluster）创建沙箱 Pod
-- [ ] 默认 RBAC 为 readonly：允许 get/list/watch pods/services/endpoints/events 与 pods/log，且不允许读取 secrets
-- [ ] Pod 安全上下文生效：non-root、drop ALL、禁止提权、禁用 hostNetwork/hostPID/hostIPC、禁用 privileged、默认只读根文件系统
-- [ ] 可在沙箱内执行诊断命令并返回 stdout/stderr/exitCode，且执行具备超时与参数安全（无 shell 注入）
-- [ ] 支持 TTL 与显式清理：Pod + SA/Role/RoleBinding 均可删除
-- [ ] main.py 中 agent 工具注册完成且不影响 internet_search 的现有行为
+- [x] 能通过配置的集群访问方式（KUBECONFIG 或 in-cluster）创建沙箱 Pod
+- [x] 默认 RBAC 为 readonly：允许 get/list/watch pods/services/endpoints/events 与 pods/log，且不允许读取 secrets
+- [x] Pod 安全上下文生效：non-root、drop ALL、禁止提权、禁用 hostNetwork/hostPID/hostIPC、禁用 privileged、默认只读根文件系统
+- [x] 可在沙箱内执行诊断命令并返回 stdout/stderr/exitCode，且执行具备超时与参数安全（无 shell 注入）
+- [x] 支持 TTL 与显式清理：Pod + SA/Role/RoleBinding 均可删除
+- [x] main.py 中 agent 工具注册完成且不影响 internet_search 的现有行为
