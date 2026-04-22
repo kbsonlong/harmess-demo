@@ -10,6 +10,7 @@ dependencies = [
     "kubernetes>=35.0.0",
     "langchain-community>=0.4.1",
     "langchain-litellm>=0.6.4",
+    "langchain-openai>=1.1.15",
     "langgraph>=1.1.8",
     "tavily-python>=0.7.23",
 ]

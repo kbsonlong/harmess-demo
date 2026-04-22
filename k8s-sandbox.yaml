@@ -1,0 +1,95 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k8s-sandbox-sa
+  namespace: default
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: k8s-sandbox-cluster-readonly
+rules:
+- apiGroups: [""]
+  resources:
+  - namespaces
+  - nodes
+  - pods
+  - pods/log
+  - services
+  - endpoints
+  - events
+  - configmaps
+  - persistentvolumes
+  - persistentvolumeclaims
+  - resourcequotas
+  - limitranges
+  verbs: ["get","list","watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments","replicasets","statefulsets","daemonsets"]
+  verbs: ["get","list","watch"]
+- apiGroups: ["batch"]
+  resources: ["jobs","cronjobs"]
+  verbs: ["get","list","watch"]
+- apiGroups: ["storage.k8s.io"]
+  resources: ["storageclasses"]
+  verbs: ["get","list","watch"]
+- apiGroups: ["authorization.k8s.io"]
+  resources: ["selfsubjectaccessreviews"]
+  verbs: ["create"]
+- nonResourceURLs: ["/version","/version/"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8s-sandbox-cluster-readonly-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: k8s-sandbox-cluster-readonly
+subjects:
+- kind: ServiceAccount
+  name: k8s-sandbox-sa
+  namespace: default
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: k8s-sandbox
+  namespace: default
+  labels:
+    app: k8s-sandbox
+spec:
+  restartPolicy: Never
+  serviceAccountName: k8s-sandbox-sa
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  volumes:
+  - name: tmp
+    emptyDir: {}
+  containers:
+  - name: sandbox
+    image: demo04/sandbox-inspector:local
+    imagePullPolicy: IfNotPresent
+    command: ["sleep","infinity"]
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: ["ALL"]
+    volumeMounts:
+    - name: tmp
+      mountPath: /tmp

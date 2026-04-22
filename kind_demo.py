@@ -8,7 +8,6 @@ from typing import Any, Dict, Optional
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
-from k8s_sandbox import create_sandbox
 
 
 def _ensure_kind() -> None:
@@ -106,9 +105,6 @@ def main() -> None:
     p_bad.add_argument("--pod-name", default="bad-imagepull")
     p_bad.add_argument("--image", default="this-image-should-not-exist.invalid:0")
 
-    p_sandbox = sub.add_parser("sandbox")
-    p_sandbox.add_argument("--namespace", default=None)
-    p_sandbox.add_argument("--image", default=None, help="覆盖 SANDBOX_IMAGE")
 
     args = parser.parse_args()
 
@@ -120,10 +116,6 @@ def main() -> None:
         return
     if args.cmd == "bad-pod":
         res = create_imagepullbackoff_pod(namespace=args.namespace, pod_name=args.pod_name, image=args.image)
-        print(res)
-        return
-    if args.cmd == "sandbox":
-        res = create_sandbox(namespace=args.namespace, image=args.image, dry_run=False, wait_ready=True, apply_rbac=True)
         print(res)
         return
 

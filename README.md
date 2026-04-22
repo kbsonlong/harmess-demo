@@ -20,17 +20,10 @@ uv run python kind_demo.py bad-pod --namespace sandbox-demo --pod-name bad-image
 
 ### 3) 创建沙箱 Pod（支持自定义镜像）
 
-通过环境变量：
+通过 YAML 手工创建（推荐）：
 
 ```bash
-export SANDBOX_IMAGE="busybox:1.36"
-uv run python kind_demo.py sandbox --namespace default
-```
-
-或直接参数覆盖（优先级更高）：
-
-```bash
-uv run python kind_demo.py sandbox --namespace default --image "busybox:1.36"
+kubectl apply -f k8s-sandbox.yaml
 ```
 
 ### 4) 清理 Kind 集群
@@ -46,3 +39,38 @@ uv run python kind_demo.py down --name demo04
 - `SANDBOX_TTL_SECONDS`：沙箱 TTL（默认 `900`）
 - `SANDBOX_ALLOW_EXEC`：是否允许 `pods/exec`（默认 `true`）
 - `SANDBOX_READONLY_ROOTFS`：是否只读根文件系统（默认 `true`）
+
+---
+
+## Sandbox Inspector（结构化巡检）
+
+目标：把巡检采集固定为“强约束 JSON”，LLM 只做分析与逐条深挖，避免直接把大量 `kubectl` 输出塞进上下文导致 Token 爆炸。
+
+### 1) 构建并加载巡检镜像到 kind
+
+```bash
+docker buildx build --platform linux/arm64 --provenance=false --sbom=false -f Dockerfile.sandbox-inspector -t demo04/sandbox-inspector:local --load .
+kind load docker-image demo04/sandbox-inspector:local --name demo04
+```
+
+### 2) 创建使用该镜像的沙箱 Pod
+
+```bash
+kubectl apply -f k8s-sandbox.yaml
+```
+
+### 3) 在沙箱内执行巡检（run）
+
+```bash
+uv run python -c 'from k8s_sandbox import exec_in_sandbox; import json; print(json.dumps(exec_in_sandbox(command=["python","-m","sandbox_inspector.cli","run"]), ensure_ascii=False, indent=2))'
+```
+
+输出的 stdout 为巡检 JSON（包含 summary + findings 列表）。
+
+### 4) 针对单条异常聚焦采集（focus）
+
+从 `findings[].focus_refs[0]` 取出 `{kind,namespace,name,container}`，再执行：
+
+```bash
+uv run python -c 'from k8s_sandbox import exec_in_sandbox; import json; print(json.dumps(exec_in_sandbox(command=["python","-m","sandbox_inspector.cli","focus","--kind","Pod","--namespace","kube-system","--name","coredns-xxxxx"]), ensure_ascii=False, indent=2))'
+```

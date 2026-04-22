@@ -17,6 +17,11 @@ description: "对 Kubernetes 集群做巡检与健康检查，输出问题清单
 - 若发现权限不足（命令返回 Forbidden/Unauthorized，或 `kubectl auth can-i ...` 返回 no），跳过当前检查项：
   - 在报告中记录：缺少的权限（资源/动词/作用域）+ 对应失败证据（关键 stderr 片段即可）
   - 给出管理员处理建议：对固定 Role/ClusterRole 进行授权（不在 Agent 内提权处理）。
+- 在巡检过程中执行的指令必须让输出结果精简化，避免过长，否则会影响报告可读性。例如：
+  - `kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded`
+  - `kubectl get deploy -A -o custom-columns="NAMESPACE:.metadata.namespace,NAME:.metadata.name,DESIRED:.spec.replicas,AVAILABLE:.status.availableReplicas"  | awk '$3 > 0 && $3 != $4'`
+- 必须确保每一项检查项都已完成，不能有遗漏。
+- 禁止在 `kubectl get <resources> -A -o json` , 否则会导致输出过长，影响报告可读性。
 - 最终输出仅包含巡检报告正文，且必须是最后一条消息，不要在报告后追加总结或完成提示。
 
 ## 适用场景（触发条件）
@@ -42,7 +47,7 @@ description: "对 Kubernetes 集群做巡检与健康检查，输出问题清单
   - 可能原因：1-3 条假设
   - 建议动作：优先级与回滚点
 
-## 巡检流程（默认只读）
+## 巡检流程
 
 ### 1) 基础连通性与上下文
 
@@ -58,19 +63,17 @@ description: "对 Kubernetes 集群做巡检与健康检查，输出问题清单
 ### 2) 节点健康与资源压力
 
 - 节点状态与角色分布：
-  - `kubectl get nodes -o wide`
+  - `kubectl get nodes -o jsonpath='{range .items[?(@.spec.taints)]}{.metadata.name}{"\t"}{.spec.taints[*].key}{"\n"}{end}'`
   - `kubectl describe node <notready-node>`（只对异常节点）
 - 关注点：
   - NotReady/NetworkUnavailable
   - DiskPressure/MemoryPressure/PIDPressure
   - 节点漂移（频繁变更 InternalIP/不可达）
-- 若 metrics 可用：
-  - `kubectl top nodes`
-  - `kubectl top pods -A --sort-by=cpu`
 
 ### 3) 控制面与核心系统组件（kube-system）
 
-- `kubectl get pods -n kube-system -o wide`
+- `kubectl get cs` 查看控制面组件状态
+- `kubectl get pods -n kube-system --field-selector=status.phase!=Running,status.phase!=Succeeded`
 - 优先检查：
   - CoreDNS（Pending/CrashLoop/高重启）
   - kube-proxy / CNI 相关组件
@@ -83,11 +86,11 @@ description: "对 Kubernetes 集群做巡检与健康检查，输出问题清单
 
 - 快速筛选异常资源：
   - `kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded`
-  - `kubectl get deploy -A`
-  - `kubectl get rs -A`
-  - `kubectl get ds -A`
-  - `kubectl get sts -A`
-  - `kubectl get job -A`
+  - `kubectl get deploy -A -o custom-columns="NAMESPACE:.metadata.namespace,NAME:.metadata.name,DESIRED:.spec.replicas,AVAILABLE:.status.availableReplicas" --no-headers | awk '$3 > 0 && $3 != $4'`
+  - `kubectl get rs -A -o custom-columns="NAMESPACE:.metadata.namespace,NAME:.metadata.name,DESIRED:.spec.replicas,AVAILABLE:.status.availableReplicas" --no-headers | awk '$3 > 0 && $3 != $4'`
+  - `kubectl get ds -A -o custom-columns="NAMESPACE:.metadata.namespace,NAME:.metadata.name,DESIRED:.spec.replicas,AVAILABLE:.status.availableReplicas" --no-headers | awk '$3 > 0 && $3 != $4'`
+  - `kubectl get sts -A -o custom-columns="NAMESPACE:.metadata.namespace,NAME:.metadata.name,DESIRED:.spec.replicas,AVAILABLE:.status.availableReplicas" --no-headers | awk '$3 > 0 && $3 != $4'`
+  - `kubectl get job -A -o custom-columns="NAMESPACE:.metadata.namespace,NAME:.metadata.name,DESIRED:.spec.completions,AVAILABLE:.status.completions" --no-headers | awk '$3 > 0 && $3 != $4'`
 - 常见判定：
   - Deployment/StatefulSet 不达标（Ready/Available 与期望不一致）
   - Pod CrashLoopBackOff / OOMKilled / ImagePullBackOff / CreateContainerConfigError
@@ -99,7 +102,7 @@ description: "对 Kubernetes 集群做巡检与健康检查，输出问题清单
 ### 5) 事件（Events）与异常趋势
 
 - 按时间排序查看最近事件：
-  - `kubectl get events -A --sort-by=.metadata.creationTimestamp`
+  - `kubectl get events -A --sort-by=.metadata.creationTimestamp | grep -Ev 'Normal'`
 - 聚焦类别：
   - 拉镜像失败（权限/仓库/网络）
   - 探针失败（Readiness/Liveness）
@@ -110,17 +113,12 @@ description: "对 Kubernetes 集群做巡检与健康检查，输出问题清单
 
 - 核心检查：
   - CNI 组件 Pod 状态（通常在 kube-system）
-  - Service/Endpoints 是否匹配：
-    - `kubectl get svc -A`
-    - `kubectl get endpoints -A`
-- 若用户允许在 sandbox 内做连通性验证，可选执行：
-  - 在 sandbox 现有容器内执行 `nslookup`/`curl` 等只读探测（不创建/删除集群资源）。
 
 ### 7) 存储（PV/PVC/StorageClass）
 
 - `kubectl get storageclass`
-- `kubectl get pvc -A`
-- `kubectl get pv`
+- `kubectl get pvc -A |grep -Ev 'Bound'`
+- `kubectl get pv|grep -Ev 'Bound'`
 - 关注点：
   - PVC Pending（未匹配 StorageClass/容量/访问模式）
   - PV Released/Failed
@@ -150,7 +148,7 @@ description: "对 Kubernetes 集群做巡检与健康检查，输出问题清单
 - Pending（调度失败）：describe Pod 看调度原因（资源/亲和/污点/PVC）；再对症处理。
 - PVC Pending：核对 StorageClass/Provisioner、事件、访问模式；检查存储后端健康。
 
-## 交付物模板（可直接复制到工单/巡检报告）
+## 交付物模板（巡检报告）
 
 ### 摘要
 
