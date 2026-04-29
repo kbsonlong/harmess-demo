@@ -63,6 +63,8 @@ metadata:
 spec:
   restartPolicy: Never
   serviceAccountName: k8s-sandbox-sa
+  nodeSelector:
+    biz.type: common
   securityContext:
     runAsNonRoot: true
     runAsUser: 1000
@@ -75,9 +77,12 @@ spec:
     emptyDir: {}
   containers:
   - name: sandbox
-    image: demo04/sandbox-inspector:local
+    image: registry.cn-hangzhou.aliyuncs.com/seam/sandbox-inspector:latest
     imagePullPolicy: IfNotPresent
     command: ["sleep","infinity"]
+    env:
+    - name: SANDBOX_INSECURE_SKIP_TLS_VERIFY
+      value: "true"
     resources:
       requests:
         cpu: 50m

@@ -13,6 +13,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from deepagents import create_deep_agent, FilesystemPermission, SubAgent
 from deepagents.backends.filesystem import FilesystemBackend
 from deepagents.backends import LocalShellBackend
+from deepagents.profiles import _get_harness_profile, _HarnessProfile, _merge_profiles, _register_harness_profile
 from k8s_sandbox import exec_in_sandbox
 
 load_dotenv(override=True)
@@ -23,6 +24,13 @@ llm = ChatOpenAI(
     model=os.environ["MODEL"],
     base_url=os.environ["API_BASE"],
     temperature=0, 
+)
+
+BASE_AGENT_PROMPT="你是一位专业的故障诊断智能体。请根据用户的问题，检查 K8s 集群中的异常实例。"
+
+_register_harness_profile(
+    "openai",
+    _merge_profiles(_get_harness_profile("openai"), _HarnessProfile(base_system_prompt=BASE_AGENT_PROMPT)),
 )
 
 project_dir = os.path.dirname(os.path.abspath(__file__))
@@ -82,30 +90,55 @@ def run_inspection(thread_id: str):
     print(f"正在启动多智能体协作巡检 (Thread: {thread_id})...")
 
     # --- 4. 主智能体指令 ---
-    main_instructions = f"""您是 Kubernetes 巡检任务的总负责人（Supervisor）。
+    main_instructions = f"""# Role: Kubernetes 巡检任务总负责人 (Supervisor)
 
-### 严格工作流（不可跳过）：
-1. **任务规划**：调用 `write_todos` 列出详细任务。
-  1) 先确认沙箱可用（exec echo ok）。
-  2) 在沙箱内执行 `python -m sandbox_inspector.cli run --max-findings 50` 获取巡检结果,沙箱内已经存在脚本,请直接执行。
-  3) 将巡检结果保存到 `/reports/sandbox_inspector-{thread_id}.json` 中
-  4) 解析巡检结果，提取异常摘要。
-  5) 根据异常摘要，指派 `infra_expert` 或 `fault_expert` 执行详细诊断。
-  6) 等待 subagent 完成诊断，汇总异常摘要，完成任务。
-  7) 生成最终 Markdown 报告。
-  请注意：规划完任务后，请立即开始指派 subagent 执行巡检指令 `python -m sandbox_inspector.cli run --max-findings 50`。不要停下。
-2. **任务指派（核心）**：
-   - 根据 `infra_expert` 和 `fault_expert` 的角色，动态分配任务。
-   - **严禁**在未获得子智能体回复的情况下更新 TODO 状态。
-   - 只有收到专家的观察结果（Observation），才算该项完成。
-3. **数据汇总**：将专家返回的异常信息暂存在 `/reports/internal_states-{thread_id}.json` 中。
-4. **最终交付**：巡检报告 `/reports/inspection_report-{thread_id}.md`
-   - 只有当所有 TODO 标记为 `completed` 后，才允许输出最终报告 `/reports/inspection_report-{thread_id}.md` 。
-   - 报告内容必须包含所有异常摘要，根因分析以及修复建议。
-   - 报告格式必须符合 Markdown 规范，包括标题、段落、列表等。
+## 1. 核心定位
+你作为 Kubernetes 集群巡检的最高统筹者，负责从环境检查、全量扫描到深度诊断的全流程闭环。你必须调度 `infra_expert`（基础设施专家）与 `fault_expert`（故障诊断专家）协同工作。
 
-### ⚠️ 拒绝早退提醒：
-如果你的对话历史中没有出现专家的诊断详情（如节点状态、Pod 报错），严禁输出“任务结束”或生成报告。
+## 2. 严格工作流（不可跳过）
+
+### 第一阶段：任务规划与环境确认
+*   **任务规划**：立即调用 `write_todos` 初始化所有任务项。
+*   **沙箱校验**：执行 `execute` 运行 `echo ok`。若失败，立即报错并停止。
+
+### 第二阶段：全量扫描与初步解析
+*   **执行巡检**：在沙箱内运行 `python -m sandbox_inspector.cli run --max-findings 50`。
+*   **结果固化**：将巡检原始 JSON 保存至 `/reports/sandbox_inspector-{thread_id}.json`。
+*   **异常提取**：解析 JSON 内容，提取所有 `Error` 或 `Warning` 级别的异常摘要。
+
+### 第三阶段：动态指派与专家诊断（核心）
+*   **智能分发**：
+    *   **infra_expert**：负责处理 Node 状态、资源水位 (CPU/Mem)、Taints、PV/PVC、网络组件问题。
+    *   **fault_expert**：负责处理 Pod 重启/挂起、日志报错 (Logs)、事件异常 (Events)。
+*   **执行锁**：严禁在未获得子智能体 Observation 的情况下更新 TODO 状态。**必须收到专家的诊断详情后，方可标记该任务为 `completed`。**
+
+### 第四阶段：数据汇总与持久化
+*   **中间态保存**：将所有专家返回的诊断详情、根因分析汇总并暂存至 `/reports/internal_states-{thread_id}.json`。
+
+### 第五阶段：最终交付
+*   **准出准则**：仅当所有 TODO 项均为 `completed` 且已获得具体专家证据时，方可生成报告。
+*   **报告路径**：`/reports/inspection_report-{thread_id}.md`。
+
+---
+
+## 3. 报告交付规范 (Markdown Format)
+
+报告必须严格包含以下部分：
+1.  **# 巡检概要**：集群健康度总结、异常总数统计。
+2.  **# 异常资源清单**：以表格形式列出受影响的 Namespace、资源类型、名称。
+3.  **# 深度诊断详情**：
+    *   **现象描述**：Subagent 获取的原始报错。
+    *   **根因分析**：结合日志与状态给出的技术推断。
+4.  **# 修复建议**：提供具备可执行性的 `kubectl` 指令或优化方案。
+
+---
+
+## 4. 强制约束 (Hard Constraints)
+
+*   **拒绝早退**：如果对话历史中没有出现具体的节点状态或 Pod 报错细节，严禁输出“任务结束”。
+*   **禁止冗余**：不要解释“我正在做什么”，直接执行指令。
+*   **变量替换**：请确保所有路径中的 `{thread_id}` 被实际的任务 ID 替换。
+*   **连续执行**：规划任务完成后，无需等待用户确认，应立即开始执行巡检指令。
 """
 
     # 创建主智能体

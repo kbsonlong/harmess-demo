@@ -5,6 +5,7 @@ import traceback
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
+import urllib3
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
@@ -28,17 +29,59 @@ class InspectorConfig:
     per_type_limit: int = 20
 
 
-def _load_config() -> None:
-    """加载 Kubernetes 访问配置：优先 kubeconfig，失败则回退到 in-cluster 配置。"""
+def _load_config(client_cfg: client.Configuration) -> None:
+    """加载 Kubernetes 访问配置：在集群内优先使用 in-cluster 配置，其次才尝试 kubeconfig。"""
+    in_cluster_hint = bool(os.getenv("KUBERNETES_SERVICE_HOST")) and os.path.exists(
+        "/var/run/secrets/kubernetes.io/serviceaccount/token"
+    )
+    prefer_kubeconfig = env_str("SANDBOX_PREFER_KUBECONFIG", "") in {"1", "true", "TRUE", "yes", "YES"}
     kubeconfig = os.getenv("KUBECONFIG")
+    if not kubeconfig:
+        default_kubeconfig = os.path.expanduser("~/.kube/config")
+        if os.path.exists(default_kubeconfig):
+            kubeconfig = default_kubeconfig
+
+    if prefer_kubeconfig and kubeconfig:
+        try:
+            config.load_kube_config(config_file=kubeconfig, client_configuration=client_cfg)
+            _apply_tls_overrides(client_cfg)
+            return
+        except Exception:
+            pass
+
+    if in_cluster_hint:
+        try:
+            config.load_incluster_config(client_configuration=client_cfg)
+            _apply_tls_overrides(client_cfg)
+            return
+        except Exception:
+            pass
     try:
         if kubeconfig:
-            config.load_kube_config(config_file=kubeconfig)
+            config.load_kube_config(config_file=kubeconfig, client_configuration=client_cfg)
         else:
-            config.load_kube_config()
+            config.load_kube_config(client_configuration=client_cfg)
+        _apply_tls_overrides(client_cfg)
         return
     except Exception:
-        config.load_incluster_config()
+        config.load_incluster_config(client_configuration=client_cfg)
+        _apply_tls_overrides(client_cfg)
+
+
+def _apply_tls_overrides(client_cfg: client.Configuration) -> None:
+    insecure = env_str("SANDBOX_INSECURE_SKIP_TLS_VERIFY", "") in {"1", "true", "TRUE", "yes", "YES"}
+    if insecure:
+        client_cfg.verify_ssl = False
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        return
+    ca_path = env_str("SANDBOX_SSL_CA_CERT", "")
+    if not ca_path:
+        default_ca = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+        if os.path.exists(default_ca):
+            ca_path = default_ca
+    if ca_path and os.path.exists(ca_path):
+        client_cfg.ssl_ca_cert = ca_path
+        client_cfg.verify_ssl = True
 
 
 def _read_file(path: str) -> Optional[str]:
@@ -95,8 +138,9 @@ class Inspector:
     def __init__(self, config: Optional[InspectorConfig] = None):
         """初始化巡检器并创建各类 K8s API Client。"""
         self.config = config or InspectorConfig()
-        _load_config()
-        self.api_client = client.ApiClient()
+        client_cfg = client.Configuration()
+        _load_config(client_cfg)
+        self.api_client = client.ApiClient(client_cfg)
         self.core = client.CoreV1Api(self.api_client)
         self.apps = client.AppsV1Api(self.api_client)
         self.batch = client.BatchV1Api(self.api_client)
