@@ -77,7 +77,7 @@ spec:
     emptyDir: {}
   containers:
   - name: sandbox
-    image: registry.cn-hangzhou.aliyuncs.com/seam/sandbox-inspector:latest
+    image: registry.cn-hangzhou.aliyuncs.com/seam/sandbox-inspector:latest@sha256:39d2ff2eabddc97d0d29a22d91c3211724f49bded2f3e
     imagePullPolicy: IfNotPresent
     command: ["sleep","infinity"]
     env:
