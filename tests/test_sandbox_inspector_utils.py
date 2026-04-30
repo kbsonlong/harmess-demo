@@ -1,6 +1,6 @@
 import unittest
 
-from sandbox_inspector.utils import stable_id, truncate_lines, truncate_text
+from sandbox_inspector.utils import json_dumps, stable_id, status_only_object, strip_managed_fields, truncate_lines, truncate_text
 
 
 class TestInspectorUtils(unittest.TestCase):
@@ -21,7 +21,23 @@ class TestInspectorUtils(unittest.TestCase):
         self.assertIn("line1", out)
         self.assertIn("(truncated)", out)
 
+    def test_json_dumps_compact(self):
+        s = json_dumps({"a": 1, "b": 2})
+        self.assertNotIn("\n", s)
+        self.assertIn('"a":1', s)
+        self.assertIn('"b":2', s)
+
+    def test_strip_managed_fields_recursive(self):
+        obj = {"metadata": {"name": "x", "managedFields": [{"manager": "y"}]}, "managedFields": [1]}
+        out = strip_managed_fields(obj)
+        self.assertNotIn("managedFields", out)
+        self.assertNotIn("managedFields", out.get("metadata", {}))
+
+    def test_status_only_object(self):
+        obj = {"metadata": {"name": "p", "managedFields": [{"manager": "y"}]}, "status": {"phase": "Running"}}
+        out = status_only_object(obj)
+        self.assertEqual(out, {"phase": "Running"})
+
 
 if __name__ == "__main__":
     unittest.main()
-

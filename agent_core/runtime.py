@@ -1,6 +1,6 @@
 import os
 import random
-from typing import Optional
+from typing import Any, Optional
 
 from deepagents import FilesystemPermission, SubAgent, create_deep_agent
 from deepagents.backends.filesystem import FilesystemBackend
@@ -95,7 +95,7 @@ def create_supervisor_agent(
     access_expert_prompt: Optional[str] = None,
     fault_expert_prompt: Optional[str] = None,
     include_subagents: Optional[list[str]] = None,
-    backend: Optional[FilesystemBackend] = None,
+    backend: Optional[Any] = None,
     checkpointer: Optional[MemorySaver] = None,
 ):
     backend = backend or FilesystemBackend(root_dir=paths.project_dir, virtual_mode=True)
@@ -110,15 +110,10 @@ def create_supervisor_agent(
         fault_expert_prompt=fault_expert_prompt,
         include_subagents=include_subagents,
     )
-    return create_deep_agent(
-        model=llm,
-        tools=[exec_in_sandbox],
-        system_prompt=supervisor_prompt,
-        subagents=subagents,
-        skills=[paths.skills_dir],
-        interrupt_on={"write_file": False, "read_file": False, "edit_file": False},
-        backend=backend,
-        permissions=[
+    permissions = None
+    backend_supports_execute = hasattr(backend, "execute")
+    if isinstance(backend, FilesystemBackend) and not backend_supports_execute:
+        permissions = [
             FilesystemPermission(
                 operations=["read", "write"],
                 paths=[os.path.join(paths.reports_dir, "**")],
@@ -134,8 +129,23 @@ def create_supervisor_agent(
                 paths=["/**"],
                 mode="deny",
             ),
-        ],
-        checkpointer=checkpointer,
+        ]
+
+    kwargs: dict[str, Any] = {
+        "model": llm,
+        "tools": [exec_in_sandbox],
+        "system_prompt": supervisor_prompt,
+        "subagents": subagents,
+        "skills": [paths.skills_dir],
+        "interrupt_on": {"write_file": False, "read_file": False, "edit_file": False},
+        "backend": backend,
+        "checkpointer": checkpointer,
+    }
+    if permissions is not None:
+        kwargs["permissions"] = permissions
+
+    return create_deep_agent(
+        **kwargs,
     )
 
 

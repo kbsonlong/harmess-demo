@@ -96,7 +96,29 @@ def env_int(name: str, default: int) -> int:
 
 def json_dumps(data: Any) -> str:
     """以 UTF-8 友好的方式格式化输出 JSON（不转义中文）。"""
-    return json.dumps(data, ensure_ascii=False, indent=2, sort_keys=False)
+    return json.dumps(data, ensure_ascii=False, indent=None, separators=(",", ":"), sort_keys=False)
+
+
+def strip_managed_fields(data: Any) -> Any:
+    if isinstance(data, dict):
+        data.pop("managedFields", None)
+        for v in list(data.values()):
+            strip_managed_fields(v)
+        return data
+    if isinstance(data, list):
+        for x in data:
+            strip_managed_fields(x)
+        return data
+    return data
+
+
+def status_only_object(data: Any) -> Any:
+    if isinstance(data, dict):
+        st = data.get("status")
+        if isinstance(st, dict):
+            return st
+        return strip_managed_fields(data)
+    return data
 
 
 def first_nonempty(values: Iterable[Optional[str]]) -> Optional[str]:

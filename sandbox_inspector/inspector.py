@@ -10,7 +10,7 @@ from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
 from .types import Evidence, FocusRef, Severity
-from .utils import env_int, env_str, json_dumps, stable_id, truncate_lines, truncate_text, utc_now_iso
+from .utils import env_int, env_str, json_dumps, stable_id, status_only_object, truncate_lines, truncate_text, utc_now_iso
 
 
 @dataclass(frozen=True)
@@ -937,8 +937,7 @@ class Inspector:
         try:
             pod = self.core.read_namespaced_pod(name=ref.name, namespace=ref.namespace)
             d = self.api_client.sanitize_for_serialization(pod)
-            d.pop("managedFields", None)
-            return d
+            return status_only_object(d)
         except Exception as e:
             return {"error": truncate_text(str(e), max_chars=300), "permission_denied": _is_permission_denied(e)}
 
@@ -947,8 +946,7 @@ class Inspector:
         try:
             n = self.core.read_node(name=ref.name)
             d = self.api_client.sanitize_for_serialization(n)
-            d.pop("managedFields", None)
-            return d
+            return status_only_object(d)
         except Exception as e:
             return {"error": truncate_text(str(e), max_chars=300), "permission_denied": _is_permission_denied(e)}
 
@@ -964,8 +962,7 @@ class Inspector:
             else:
                 obj = self.apps.read_namespaced_daemon_set(name=ref.name, namespace=ref.namespace)
             d = self.api_client.sanitize_for_serialization(obj)
-            d.pop("managedFields", None)
-            return d
+            return status_only_object(d)
         except Exception as e:
             return {"error": truncate_text(str(e), max_chars=300), "permission_denied": _is_permission_denied(e)}
 
@@ -976,8 +973,7 @@ class Inspector:
         try:
             obj = self.batch.read_namespaced_job(name=ref.name, namespace=ref.namespace)
             d = self.api_client.sanitize_for_serialization(obj)
-            d.pop("managedFields", None)
-            return d
+            return status_only_object(d)
         except Exception as e:
             return {"error": truncate_text(str(e), max_chars=300), "permission_denied": _is_permission_denied(e)}
 
