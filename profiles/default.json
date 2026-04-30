@@ -1,0 +1,10 @@
+{
+  "name": "default",
+  "supervisor_prompt_path": "../prompts/default/supervisor.md",
+  "infra_expert_prompt_path": "../prompts/default/infra_expert.md",
+  "workload_expert_prompt_path": "../prompts/default/workload_expert.md",
+  "platform_expert_prompt_path": "../prompts/default/platform_expert.md",
+  "access_expert_prompt_path": "../prompts/default/access_expert.md",
+  "initial_user_message": "对 Kubernetes 集群做巡检与健康检查,如果有异常,请报告异常信息并提供修复方案",
+  "recursion_limit": 150
+}

@@ -1,0 +1,61 @@
+{
+  "features": [
+    {
+      "id": "feat-001",
+      "name": "Kind 集群管理",
+      "description": "在本地通过 kind 拉起/销毁 demo 集群，并提供用于演示的异常 Pod 场景",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "kind_demo.py 可创建/销毁集群并生成 bad-pod 示例"
+    },
+    {
+      "id": "feat-002",
+      "name": "沙箱 Pod 部署",
+      "description": "提供沙箱/巡检 Pod 的 YAML 以及必要的 RBAC，使巡检命令在集群内安全执行",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "k8s-sandbox.yaml + Dockerfile.sandbox-inspector + README.md 说明"
+    },
+    {
+      "id": "feat-003",
+      "name": "沙箱执行封装",
+      "description": "通过 k8s_sandbox.exec_in_sandbox 统一封装集群内命令执行、Pod 选择与超时处理",
+      "dependencies": ["feat-002"],
+      "status": "done",
+      "evidence": "k8s_sandbox.py 提供 exec_in_sandbox，CLAUDE.md 有用法"
+    },
+    {
+      "id": "feat-004",
+      "name": "结构化巡检（run/focus）",
+      "description": "sandbox_inspector 输出结构化 JSON：全量扫描(run) + 单资源深挖(focus)，带截断与权限探测",
+      "dependencies": ["feat-003"],
+      "status": "done",
+      "evidence": "sandbox_inspector/ + k8s-sandbox.yaml + run_inspection.sh"
+    },
+    {
+      "id": "feat-005",
+      "name": "多智能体协作工作流",
+      "description": "Supervisor 强制 plan→assign→aggregate→report，子专家按职责分工并将证据落盘到 reports/",
+      "dependencies": ["feat-004"],
+      "status": "in-progress",
+      "evidence": "main.py/test.py 已实现子智能体与落盘约束；待统一入口与验收用例"
+    },
+    {
+      "id": "feat-006",
+      "name": "Harness 核心文件与会话连续性",
+      "description": "AGENTS.md 作为路由层，feature_list.json + docs/PROGRESS.md + docs/session-handoff.md 提供跨会话连续性，init.sh 提供验证入口",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "AGENTS.md + feature_list.json + docs/PROGRESS.md + docs/session-handoff.md + init.sh"
+    },
+    {
+      "id": "feat-007",
+      "name": "Node.js 访问 apiserver 测试 demo",
+      "description": "提供 Node.js 示例：本机 kubeconfig 或集群内 ServiceAccount token 访问 apiserver（用于权限/连通性验证）",
+      "dependencies": [],
+      "status": "not-started",
+      "evidence": ""
+    }
+  ]
+}
+
