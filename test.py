@@ -2,7 +2,7 @@ import os
 import json
 import time
 import random
-from typing import Annotated, Sequence, TypedDict, List
+from typing import Annotated, Sequence, TypedDict, List, Any, Dict, Optional
 from dotenv import load_dotenv
 
 from langchain_openai import ChatOpenAI
@@ -64,6 +64,107 @@ class ToolEventPrinter(BaseCallbackHandler):
     def on_tool_end(self, output, run_id=None, **kwargs):
         duration = time.perf_counter() - self._start_time_by_run_id.pop(run_id, 0) if run_id in self._start_time_by_run_id else 0
         print(f"\n[tool:end] duration={duration:.2f}s\n{_format_message_content(output)}")
+
+class TokenUsageTracker(BaseCallbackHandler):
+    def __init__(self):
+        self.totals: Dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        self.by_model: Dict[str, Dict[str, int]] = {}
+        self.calls: List[Dict[str, Any]] = []
+        self._llm_start_by_run_id: Dict[str, Dict[str, Any]] = {}
+
+    def _add_usage(self, usage: Dict[str, Any], model_name: Optional[str]) -> Dict[str, int]:
+        def _to_int(v: Any) -> int:
+            try:
+                return int(v or 0)
+            except Exception:
+                return 0
+
+        prompt_tokens = _to_int(usage.get("prompt_tokens") or usage.get("input_tokens"))
+        completion_tokens = _to_int(usage.get("completion_tokens") or usage.get("output_tokens"))
+        total_tokens = _to_int(usage.get("total_tokens"))
+        if total_tokens == 0:
+            total_tokens = prompt_tokens + completion_tokens
+
+        self.totals["prompt_tokens"] += prompt_tokens
+        self.totals["completion_tokens"] += completion_tokens
+        self.totals["total_tokens"] += total_tokens
+
+        key = model_name or "unknown"
+        bucket = self.by_model.setdefault(key, {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})
+        bucket["prompt_tokens"] += prompt_tokens
+        bucket["completion_tokens"] += completion_tokens
+        bucket["total_tokens"] += total_tokens
+        return {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "total_tokens": total_tokens}
+
+    def on_llm_start(self, serialized, prompts, run_id=None, parent_run_id=None, **kwargs):
+        if run_id is None:
+            return
+        llm_name = None
+        try:
+            llm_name = (serialized or {}).get("name")
+        except Exception:
+            llm_name = None
+        tags = kwargs.get("tags")
+        metadata = kwargs.get("metadata")
+        self._llm_start_by_run_id[str(run_id)] = {
+            "started_at": time.time(),
+            "llm": llm_name,
+            "n_prompts": len(prompts) if isinstance(prompts, list) else None,
+            "parent_run_id": str(parent_run_id) if parent_run_id is not None else None,
+            "tags": tags if isinstance(tags, list) else None,
+            "metadata": metadata if isinstance(metadata, dict) else None,
+        }
+
+    def on_llm_end(self, response, run_id=None, **kwargs):
+        usage = None
+        model_name = None
+        try:
+            model_name = getattr(response, "llm_output", None) and response.llm_output.get("model_name")
+        except Exception:
+            model_name = None
+
+        try:
+            llm_output = getattr(response, "llm_output", None) or {}
+            usage = llm_output.get("token_usage") or llm_output.get("usage")
+        except Exception:
+            usage = None
+
+        if not isinstance(usage, dict):
+            try:
+                gens = getattr(response, "generations", None) or []
+                if gens and gens[0] and gens[0][0]:
+                    gi = getattr(gens[0][0], "generation_info", None) or {}
+                    usage = gi.get("token_usage") or gi.get("usage")
+                    if model_name is None:
+                        model_name = gi.get("model_name") or gi.get("model")
+            except Exception:
+                usage = None
+
+        if isinstance(usage, dict):
+            normalized = self._add_usage(usage, model_name)
+            meta = self._llm_start_by_run_id.pop(str(run_id), {}) if run_id is not None else {}
+            started_at = meta.get("started_at")
+            ended_at = time.time()
+            duration_s = None
+            if isinstance(started_at, (int, float)):
+                duration_s = round(ended_at - started_at, 6)
+            self.calls.append(
+                {
+                    "run_id": str(run_id) if run_id is not None else None,
+                    "parent_run_id": meta.get("parent_run_id"),
+                    "llm": meta.get("llm"),
+                    "model": model_name or "unknown",
+                    "prompt_tokens": normalized["prompt_tokens"],
+                    "completion_tokens": normalized["completion_tokens"],
+                    "total_tokens": normalized["total_tokens"],
+                    "started_at": started_at,
+                    "ended_at": ended_at,
+                    "duration_s": duration_s,
+                    "n_prompts": meta.get("n_prompts"),
+                    "tags": meta.get("tags"),
+                    "metadata": meta.get("metadata"),
+                }
+            )
 
 # --- 3. 定义子智能体 (Sub-Agents) ---
 
@@ -173,8 +274,11 @@ def run_inspection(thread_id: str):
     config = {
         "configurable": {"thread_id": thread_id}, 
         "recursion_limit": 150, # 多 Agent 协作需要更高的步数上限
-        "callbacks": [ToolEventPrinter()]
+        "callbacks": []
     }
+
+    token_tracker = TokenUsageTracker()
+    config["callbacks"].extend([ToolEventPrinter(), token_tracker])
     
     for chunk in agent.stream(initial_state, config):
         if "agent" in chunk:
@@ -183,6 +287,22 @@ def run_inspection(thread_id: str):
         elif "call_subagent" in chunk:
             print(f"\n--- [调度专家]: {chunk['call_subagent']}")
 
+    token_usage_path = os.path.join(reports_dir, f"token_usage-{thread_id}.json")
+    with open(token_usage_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "thread_id": thread_id,
+                "totals": token_tracker.totals,
+                "by_model": token_tracker.by_model,
+                "calls": token_tracker.calls,
+            },
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
+    print(f"\n[Token统计] total={token_tracker.totals.get('total_tokens', 0)} "
+          f"(prompt={token_tracker.totals.get('prompt_tokens', 0)}, completion={token_tracker.totals.get('completion_tokens', 0)})")
+    print(f"[Token统计] 明细已保存: {token_usage_path}")
     print(f"\n[任务结束] 报告已生成在 {reports_dir} 目录。")
 
 if __name__ == "__main__":
