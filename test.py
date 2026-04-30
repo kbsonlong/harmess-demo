@@ -11,7 +11,15 @@ from agent_core.notify import notify_wecom_if_configured
 from agent_core.profile import load_profile, load_profile_from_path
 from agent_core.prompts import build_supervisor_prompt
 from agent_core.runtime import create_supervisor_agent, run_supervisor
+from deepagents.profiles import _get_harness_profile, _HarnessProfile, _merge_profiles, _register_harness_profile
 
+
+BASE_AGENT_PROMPT=""
+
+_register_harness_profile(
+    "openai",
+    _merge_profiles(_get_harness_profile("openai"), _HarnessProfile(base_system_prompt=BASE_AGENT_PROMPT)),
+)
 def main():
     load_dotenv(override=True)
     project_dir = os.path.dirname(os.path.abspath(__file__))
