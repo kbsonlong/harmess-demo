@@ -3,8 +3,7 @@
   "supervisor_prompt_path": "../prompts/testbench/supervisor.md",
   "infra_expert_prompt_path": "../prompts/testbench/infra_expert.md",
   "fault_expert_prompt_path": "../prompts/testbench/fault_expert.md",
-  "initial_user_message": "对 Kubernetes 集群做日常巡检与故障定位分析，如果有异常请给出可复现证据与可执行修复建议。",
+  "initial_user_message": "对 Kubernetes 集群做巡检与健康检查,如果有异常,请报告异常信息并提供修复方案",
   "recursion_limit": 200,
   "include_subagents": ["infra_expert", "fault_expert"]
 }
-

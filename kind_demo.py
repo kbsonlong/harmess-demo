@@ -8,6 +8,8 @@ from typing import Any, Dict, Optional
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
+from agent_core.kubeconfig import ensure_kubeconfig_env_default
+
 
 
 def _ensure_kind() -> None:
@@ -16,15 +18,13 @@ def _ensure_kind() -> None:
 
 
 def _run(cmd: list[str]) -> None:
-    subprocess.run(cmd, check=True)
+    ensure_kubeconfig_env_default()
+    subprocess.run(cmd, check=True, env=os.environ.copy())
 
 
 def _load_kube_config() -> None:
-    kubeconfig = os.getenv("KUBECONFIG")
-    if kubeconfig:
-        config.load_kube_config(config_file=kubeconfig)
-    else:
-        config.load_kube_config()
+    kubeconfig = ensure_kubeconfig_env_default()
+    config.load_kube_config(config_file=kubeconfig)
 
 
 def kind_up(name: str) -> None:

@@ -83,7 +83,45 @@ class TestInspectorRun(unittest.TestCase):
         self.assertEqual(len(out["findings"]), 1)
         self.assertTrue(out["stats"]["truncated"].get("max_findings_reached"))
 
+    def test_check_pods_includes_crashloop_running_pod(self):
+        ins = Inspector.__new__(Inspector)
+        ins.config = InspectorConfig(max_findings=10)
+        ins.api_client = Mock()
+        ins.api_client.sanitize_for_serialization.side_effect = lambda x: x
+        ins.core = Mock()
+
+        healthy_running = {
+            "metadata": {"namespace": "default", "name": "ok-pod"},
+            "status": {
+                "phase": "Running",
+                "containerStatuses": [{"ready": True, "restartCount": 0, "state": {"running": {}}}],
+            },
+        }
+        crashloop_running = {
+            "metadata": {"namespace": "sandbox-demo", "name": "bad-crashloop"},
+            "status": {
+                "phase": "Running",
+                "containerStatuses": [
+                    {
+                        "ready": False,
+                        "restartCount": 5,
+                        "state": {"waiting": {"reason": "CrashLoopBackOff"}},
+                    }
+                ],
+            },
+        }
+        permissions = {"checks": [{"group": "", "resource": "pods", "verb": "list", "allowed": True}]}
+        stats = {"scanned": {}, "truncated": {}}
+
+        with patch("sandbox_inspector.inspector._pagination_loop", return_value=[healthy_running, crashloop_running]):
+            findings = ins._check_pods(permissions, stats)
+
+        self.assertEqual(stats["scanned"]["abnormal_pods"], 2)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["title"], "异常 Pod：CrashLoopBackOff")
+        self.assertEqual(findings[0]["severity"], "P1")
+        self.assertEqual(findings[0]["focus_refs"][0]["name"], "bad-crashloop")
+
 
 if __name__ == "__main__":
     unittest.main()
-

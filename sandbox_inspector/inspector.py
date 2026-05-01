@@ -646,13 +646,13 @@ class Inspector:
         ]
 
     def _check_pods(self, permissions: dict[str, Any], stats: dict[str, Any]) -> list[dict[str, Any]]:
-        """检查异常 Pod：非 Running/Succeeded，并按常见原因聚合。"""
+        """检查异常 Pod：覆盖 Running 中的 CrashLoopBackOff，并按常见原因聚合。"""
         cfg = self.config
         if not self._allowed(permissions, group="", resource="pods", verb="list"):
             return [self._missing_perm_finding("pods/list")]
         pods = _pagination_loop(
             list_func=self.core.list_pod_for_all_namespaces,
-            field_selector="status.phase!=Running,status.phase!=Succeeded",
+            field_selector="status.phase!=Succeeded",
             limit=200,
             max_items=min(cfg.max_items_scanned, 1500),
         )
@@ -666,18 +666,19 @@ class Inspector:
             st = pd.get("status") or {}
             ns = meta.get("namespace")
             name = meta.get("name")
-            phase = st.get("phase")
-            reason = st.get("reason") or phase or "Unknown"
-            cs = (st.get("containerStatuses") or []) + (st.get("initContainerStatuses") or [])
-            derived = self._pod_reason(cs) or reason
+            derived = self._abnormal_pod_reason(pd)
+            if not derived:
+                continue
             by_reason.setdefault(derived, []).append(
                 {
                     "namespace": ns,
                     "name": name,
-                    "phase": phase,
+                    "phase": st.get("phase"),
                     "reason": derived,
                 }
             )
+        if not by_reason:
+            return []
         findings: list[dict[str, Any]] = []
         for reason, items_all in sorted(by_reason.items(), key=lambda x: len(x[1]), reverse=True):
             items = items_all[: cfg.max_name_list]
@@ -705,6 +706,18 @@ class Inspector:
             if len(findings) >= cfg.per_type_limit:
                 break
         return findings
+
+    def _abnormal_pod_reason(self, pod: dict[str, Any]) -> Optional[str]:
+        """识别 Pod 是否异常，并返回应聚合的异常原因。"""
+        status = pod.get("status") or {}
+        phase = status.get("phase")
+        statuses = (status.get("containerStatuses") or []) + (status.get("initContainerStatuses") or [])
+        derived = self._pod_reason(statuses)
+        if derived:
+            return derived
+        if phase in {"Pending", "Failed", "Unknown"}:
+            return str(phase)
+        return None
 
     def _pod_reason(self, statuses: list[dict[str, Any]]) -> Optional[str]:
         """从容器状态推导更具体的异常原因（如 ImagePullBackOff/OOMKilled）。"""

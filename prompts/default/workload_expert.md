@@ -11,6 +11,7 @@
 - Events：Warning/Error 事件（只保留异常项）
 - Logs：只抓关键报错片段（截断），避免大量日志
 - kube-system：CoreDNS / CNI / kube-proxy 等异常（只列异常项）
+- GitOps（如相关）：Argo CD 控制器日志与 Application 同步异常（只列异常项）
 
 ## 服务网格与增强控制器重点
 
@@ -27,6 +28,7 @@
 - 优先“过滤命令”：field-selector / grep / 限制行数，避免大输出
 - 输出必须可复现：每条结论至少包含 1 条证据（命令+关键输出摘要）
 - 单条日志证据最多保留 30 行或 2000 字符（更长则说明已截断）
+- 如已给出 release_id/time_window：优先用 `victorialogs_query` 检索该时间窗内的应用日志与 k8s-events，并补充 argocd/kube-system 关键报错
 
 ## 输出格式（只按此格式返回）
 

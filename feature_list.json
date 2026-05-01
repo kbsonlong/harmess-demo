@@ -30,7 +30,7 @@
       "description": "sandbox_inspector 输出结构化 JSON：全量扫描(run) + 单资源深挖(focus)，带截断与权限探测",
       "dependencies": ["feat-003"],
       "status": "done",
-      "evidence": "sandbox_inspector/ + k8s-sandbox.yaml + run_inspection.sh"
+      "evidence": "sandbox_inspector/ + k8s-sandbox.yaml + run_inspection.sh；Kind demo04 二次验证已在 reports/demo04/inspection_results_round3.json 识别出 CrashLoopBackOff(P1)、ImagePullBackOff(P1)、PVC 非 Bound(P1) 与 Pending Pod(P2)"
     },
     {
       "id": "feat-005",
@@ -38,7 +38,7 @@
       "description": "Supervisor 强制 plan→assign→aggregate→report，子专家按职责分工并将证据落盘到 reports/",
       "dependencies": ["feat-004"],
       "status": "in-progress",
-      "evidence": "main.py/test.py 已实现子智能体与落盘约束；待统一入口与验收用例"
+      "evidence": "main.py/test.py 已实现子智能体与落盘约束；run_supervisor 已恢复 Token 统计并落盘 reports/token_usage-<thread_id>.json；新增 VictoriaLogs 查询工具 agent_core/victorialogs.victorialogs_query 并接入 runtime（Supervisor/子智能体均可用）；main.py 会自动注入最新 release_failure 上下文到 initial_user_message；prompts/default 与 prompts/testbench 增加时间线/证据索引/回滚点章节要求"
     },
     {
       "id": "feat-006",
@@ -55,7 +55,30 @@
       "dependencies": [],
       "status": "not-started",
       "evidence": ""
+    },
+    {
+      "id": "feat-008",
+      "name": "Kind + ArgoCD + demo-app 最小清单与发布元数据",
+      "description": "提供 Argo CD 安装/暴露与 demo-app Application 的最小清单，并提供发布元数据 JSON 的落盘入口（reports/release_metadata-<thread_id>.json）。",
+      "dependencies": ["feat-001"],
+      "status": "done",
+      "evidence": "manifests/gitops/argocd（kustomize 引用 Argo CD 官方 install.yaml + NodePort patch；kustomization.yaml 显式 namespace: argocd，确保 namespaced 资源落在 argocd）+ manifests/gitops/argocd/apps/demo-app.yaml + gitops_demo.py(metadata/up) 生成 reports/release_metadata-<thread_id>.json；gitops_demo.py(wait_argocd_ready) 增强等待：ns/CRD(Established)/deploy --all(Available)；gitops_demo.py(inject-failure/wait-fail) 支持 imagepull/crashloop，生成 reports/release_failure-<thread_id>.json（含 release_id/对象/时间窗）；./init.sh（30 passed）"
+    },
+    {
+      "id": "feat-009",
+      "name": "VictoriaLogs + 日志/事件采集链路",
+      "description": "提供 VictoriaLogs 单实例部署清单；用 Fluent Bit DaemonSet 采集容器日志（含 kube-system/argocd）并写入 VictoriaLogs；部署 event-exporter 采集 Events 并写入 VictoriaLogs。",
+      "dependencies": ["feat-008"],
+      "status": "done",
+      "evidence": "manifests/gitops/victorialogs：包含 victorialogs StatefulSet+Service、fluent-bit DaemonSet+ConfigMap+RBAC、event-exporter Deployment+ConfigMap+RBAC；kubectl kustomize manifests/gitops/victorialogs 可成功渲染；./init.sh 已通过"
+    },
+    {
+      "id": "feat-010",
+      "name": "Demo 脚本默认使用项目内 kubeconfig",
+      "description": "kind_demo.py/gitops_demo.py 在未设置 KUBECONFIG 时，默认指向项目内 .demo/kubeconfig，并确保 kubectl 与 Kubernetes Python client 统一使用该路径。",
+      "dependencies": ["feat-001", "feat-008"],
+      "status": "done",
+      "evidence": "新增 agent_core/kubeconfig.py 统一默认 kubeconfig 逻辑；kind_demo.py/gitops_demo.py 的 kubectl subprocess 与 config.load_kube_config 均遵循同一路径；新增 tests/test_demo_kubeconfig_default.py；./init.sh（35 passed）"
     }
   ]
 }
-

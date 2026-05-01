@@ -74,3 +74,32 @@ uv run python -c 'from k8s_sandbox import exec_in_sandbox; import json; print(js
 ```bash
 uv run python -c 'from k8s_sandbox import exec_in_sandbox; import json; print(json.dumps(exec_in_sandbox(command=["python","-m","sandbox_inspector.cli","focus","--kind","Pod","--namespace","kube-system","--name","coredns-xxxxx"]), ensure_ascii=False, indent=2))'
 ```
+
+---
+
+## Kind + Argo CD + demo-app（GitOps 最小清单）
+
+### 1) 安装 Argo CD（kustomize 引用官方 install.yaml）
+
+```bash
+kubectl apply -k manifests/gitops/argocd
+kubectl -n argocd wait --for=condition=Available deploy/argocd-server --timeout=300s
+```
+
+本仓库默认将 `argocd-server` Service patch 为 NodePort：
+- HTTP: 30080
+- HTTPS: 30443
+
+### 2) 创建 demo-app（Argo CD Application）
+
+```bash
+kubectl apply -f manifests/gitops/argocd/apps/demo-app.yaml
+```
+
+### 3) 输出发布元数据（落盘到 reports/）
+
+```bash
+uv run python gitops_demo.py metadata
+```
+
+会生成：`reports/release_metadata-<thread_id>.json`
