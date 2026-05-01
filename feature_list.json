@@ -70,7 +70,7 @@
       "description": "提供 VictoriaLogs 单实例部署清单；用 Fluent Bit DaemonSet 采集容器日志（含 kube-system/argocd）并写入 VictoriaLogs；部署 event-exporter 采集 Events 并写入 VictoriaLogs。",
       "dependencies": ["feat-008"],
       "status": "done",
-      "evidence": "manifests/gitops/victorialogs：包含 victorialogs StatefulSet+Service、fluent-bit DaemonSet+ConfigMap+RBAC、event-exporter Deployment+ConfigMap+RBAC；kubectl kustomize manifests/gitops/victorialogs 可成功渲染；./init.sh 已通过"
+      "evidence": "manifests/gitops/victorialogs：包含 victorialogs StatefulSet+Service、fluent-bit DaemonSet+ConfigMap+RBAC、event-exporter Deployment+ConfigMap+RBAC；修复 Fluent Bit 写入 VictoriaLogs 的 _msg 映射（_msg_field 从 log 改为 message，并在 Lua 兜底 message=log）；event-exporter maxEventAgeSeconds 调整为 600；Kind 验证：curl POST query=HTTP 可返回真实 _msg；./init.sh（35 passed）"
     },
     {
       "id": "feat-010",

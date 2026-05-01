@@ -11,16 +11,17 @@
 
 ## 本次目标（只写一个）
 
-- 实现 Task7：kind_demo.py/gitops_demo.py 默认使用项目内 `.demo/kubeconfig`，并统一 kubectl 与 Kubernetes client
+- 实现 Task8：修复 Fluent Bit 输出到 VictoriaLogs 的 _msg/_time 映射；调整 event-exporter maxEventAgeSeconds；在 kind 用 curl 查询验证 _msg 可检索
 
 ## 变更与证据
 
 - 变更点：
-  - `agent_core/kubeconfig.py`：新增默认 kubeconfig 路径与环境变量注入
-  - `kind_demo.py`：kubectl/kubernetes client 默认遵循 `.demo/kubeconfig`
-  - `gitops_demo.py`：kubectl subprocess 与 kubernetes client 统一遵循 `.demo/kubeconfig`
-  - `tests/test_demo_kubeconfig_default.py`：覆盖默认与显式 `KUBECONFIG` 场景
+  - `manifests/gitops/victorialogs/fluent-bit-configmap.yaml`：_msg_field 从 log 改为 message，并在 Lua 中兜底 message=log
+  - `manifests/gitops/victorialogs/event-exporter-configmap.yaml`：maxEventAgeSeconds 从 10 调整为 600
 - 验证证据：
+  - kind 中应用变更并重启采集链路：`kubectl apply -k manifests/gitops/victorialogs` + `kubectl -n observability rollout restart ds/fluent-bit deploy/event-exporter`
+  - Kind curl 查询可返回真实 `_msg`（不再是 “missing _msg field”）：
+    - `curl -X POST -H 'Content-Type: application/x-www-form-urlencoded' --data 'query=HTTP&limit=1' http://127.0.0.1:19428/select/logsql/query`
   - `./init.sh` 单测全量通过（35 passed）
 
 ## 当前阻塞/风险

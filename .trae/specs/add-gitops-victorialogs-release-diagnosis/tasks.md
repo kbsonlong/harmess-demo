@@ -28,14 +28,19 @@
   - [x] 集成验证（可选 e2e）：kind 环境中完成一次失败发布 → 触发 deepAgent → 产出 reports/ 报告与证据文件
   - [x] 运行 ./init.sh 并确保通过
 
-- [ ] Task 6: 修复并验证 Argo CD 安装在目标 namespace
-  - [ ] 修复 manifests/gitops/argocd 的 kustomization，使 install.yaml 中的 namespaced 资源实际落在 argocd namespace
-  - [ ] 更新 gitops_demo.py 的就绪等待逻辑（确保能稳定等待 argocd-server 就绪）
-  - [ ] kind 集群中执行一次 up（--skip-kind）验证：argocd namespace 下存在部署且可用
+- [x] Task 6: 修复并验证 Argo CD 安装在目标 namespace
+  - [x] 修复 manifests/gitops/argocd 的 kustomization，使 install.yaml 中的 namespaced 资源实际落在 argocd namespace
+  - [x] 更新 gitops_demo.py 的就绪等待逻辑（确保能稳定等待 argocd-server 就绪）
+  - [x] kind 集群中执行一次 up（--skip-kind）验证：argocd namespace 下存在部署且可用
 
 - [x] Task 7: 兼容沙箱环境的 kubeconfig 写入
   - [x] kind_demo/gitops_demo 默认使用项目内可写 kubeconfig（如 .demo/kubeconfig），避免写入 ~/.kube
   - [x] 更新相关读取逻辑（kubernetes client 与 kubectl）统一遵循 KUBECONFIG
+
+- [x] Task 8: 修复日志写入字段映射并验证可查询性
+  - [x] Fluent Bit 写入 VictoriaLogs 时确保 _msg 字段来自真实日志字段（兼容 cri/parser + kubernetes filter）
+  - [x] event-exporter 调整事件时间窗配置，确保可稳定查询到近 10 分钟内事件
+  - [x] 在 kind 集群中验证：/select/logsql/query 返回的 _msg 为真实 message，且可按 namespace/container 查询
 
 # Task Dependencies
 - Task 2 depends on Task 1（字段/标签约定用于采集与检索）

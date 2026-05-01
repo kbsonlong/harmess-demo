@@ -9,7 +9,7 @@ data:
   config.yaml: |
     logLevel: info
     logFormat: json
-    maxEventAgeSeconds: 10
+    maxEventAgeSeconds: 600
     kubeQPS: 50
     kubeBurst: 100
     route:
