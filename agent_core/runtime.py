@@ -166,18 +166,33 @@ def run_supervisor(
         "callbacks": [ToolEventPrinter(), token_tracker],
     }
     initial_state = {"messages": [{"role": "user", "content": initial_user_message}]}
-    for chunk in agent.stream(initial_state, config):
-        if "agent" in chunk:
-            msg = chunk["agent"]["messages"][-1]
-            print(f"\n--- [Supervisor]: {msg.content}")
-        elif "call_subagent" in chunk:
-            print(f"\n--- [调度专家]: {chunk['call_subagent']}")
-    if reports_dir:
-        token_usage_path = token_tracker.write_report(reports_dir, thread_id)
-        print(
-            f"\n[Token统计] total={token_tracker.totals.get('total_tokens', 0)} "
-            f"(prompt={token_tracker.totals.get('prompt_tokens', 0)}, "
-            f"completion={token_tracker.totals.get('completion_tokens', 0)})"
-        )
-        print(f"[Token统计] 明细已保存: {token_usage_path}")
+    stream_error: Optional[Exception] = None
+    try:
+        for chunk in agent.stream(initial_state, config):
+            if "agent" in chunk:
+                msg = chunk["agent"]["messages"][-1]
+                print(f"\n--- [Supervisor]: {msg.content}")
+            elif "call_subagent" in chunk:
+                print(f"\n--- [调度专家]: {chunk['call_subagent']}")
+    except Exception as e:
+        stream_error = e
+        msg = f"{type(e).__name__}: {str(e)[:800]}"
+        msg = " ".join(msg.split())
+        print(f"\n[run_supervisor] 异常中断：{msg}")
+    finally:
+        if reports_dir:
+            try:
+                token_usage_path = token_tracker.write_report(reports_dir, thread_id)
+                print(
+                    f"\n[Token统计] total={token_tracker.totals.get('total_tokens', 0)} "
+                    f"(prompt={token_tracker.totals.get('prompt_tokens', 0)}, "
+                    f"completion={token_tracker.totals.get('completion_tokens', 0)})"
+                )
+                print(f"[Token统计] 明细已保存: {token_usage_path}")
+            except Exception as e:
+                msg = f"{type(e).__name__}: {str(e)[:500]}"
+                msg = " ".join(msg.split())
+                print(f"\n[Token统计] 落盘失败：{msg}")
+        if stream_error is not None:
+            print(f"[run_supervisor] thread_id={thread_id}")
     return thread_id

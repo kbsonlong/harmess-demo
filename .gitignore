@@ -15,3 +15,4 @@ reports/
 report/
 large_tool_results/
 .trae/skills/
+.demo/kubeconfig

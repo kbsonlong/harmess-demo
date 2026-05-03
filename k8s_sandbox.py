@@ -7,6 +7,12 @@ from kubernetes import client, config
 from kubernetes.stream import stream
 
 
+def _format_exception(e: Exception, *, limit: int = 800) -> str:
+    s = f"{type(e).__name__}: {e}"
+    s = " ".join(s.split())
+    return s[:limit]
+
+
 def _load_kube_config() -> None:
     kubeconfig = os.getenv("KUBECONFIG")
     try:
@@ -89,7 +95,21 @@ def exec_in_sandbox(
         }
     if pod_name is None and not label_selector:
         label_selector = "app=k8s-sandbox"
-    core_v1 = _get_core_v1()
+    try:
+        core_v1 = _get_core_v1()
+    except Exception as e:
+        return {
+            "namespace": ns,
+            "pod_name": pod_name,
+            "label_selector": label_selector,
+            "container": container,
+            "command": cmd,
+            "stdout": "",
+            "stderr": _format_exception(e),
+            "exit_code": None,
+            "permission_denied": False,
+            "error": "kubeconfig_error",
+        }
     selected_label_selector: Optional[str] = None
     selected_container: Optional[str] = container
 
@@ -105,7 +125,21 @@ def exec_in_sandbox(
 
     if pod_name is None:
         selected_label_selector = label_selector
-        pods = core_v1.list_namespaced_pod(namespace=ns, label_selector=label_selector)
+        try:
+            pods = core_v1.list_namespaced_pod(namespace=ns, label_selector=label_selector)
+        except Exception as e:
+            return {
+                "namespace": ns,
+                "pod_name": pod_name,
+                "label_selector": selected_label_selector,
+                "container": selected_container,
+                "command": cmd,
+                "stdout": "",
+                "stderr": _format_exception(e),
+                "exit_code": None,
+                "permission_denied": False,
+                "error": "k8s_api_error",
+            }
         items = list(getattr(pods, "items", []) or [])
         if not items:
             return {
@@ -163,53 +197,101 @@ def exec_in_sandbox(
                 "error": "pod_name_missing",
             }
     elif selected_container is None:
-        pod_obj = core_v1.read_namespaced_pod(name=pod_name, namespace=ns)
-        selected_container = choose_container(pod_obj)
-
-    resp = stream(
-        core_v1.connect_get_namespaced_pod_exec,
-        pod_name,
-        ns,
-        command=cmd,
-        **({"container": selected_container} if selected_container else {}),
-        stderr=True,
-        stdin=False,
-        stdout=True,
-        tty=False,
-        _preload_content=False,
-    )
-    stdout_chunks: List[str] = []
-    stderr_chunks: List[str] = []
-    exit_code: Optional[int] = None
-    start = time.time()
-    while resp.is_open():
-        resp.update(timeout=1)
-        if resp.peek_stdout():
-            stdout_chunks.append(resp.read_stdout())
-        if resp.peek_stderr():
-            stderr_chunks.append(resp.read_stderr())
-        if time.time() - start > timeout_seconds:
-            resp.close()
-            stdout = "".join(stdout_chunks).strip()
-            stderr = "".join(stderr_chunks).strip()
+        try:
+            pod_obj = core_v1.read_namespaced_pod(name=pod_name, namespace=ns)
+        except Exception as e:
             return {
                 "namespace": ns,
                 "pod_name": pod_name,
                 "label_selector": selected_label_selector,
                 "container": selected_container,
                 "command": cmd,
-                "stdout": stdout,
-                "stderr": stderr or "exec timeout",
+                "stdout": "",
+                "stderr": _format_exception(e),
                 "exit_code": None,
                 "permission_denied": False,
-                "error": "exec_timeout",
+                "error": "k8s_api_error",
             }
-    for c in getattr(resp, "channel", {}).values():
-        if isinstance(c, str) and "exit code" in c.lower():
-            digits = "".join(ch for ch in c if ch.isdigit())
-            if digits:
-                exit_code = int(digits)
-                break
+        selected_container = choose_container(pod_obj)
+
+    try:
+        resp = stream(
+            core_v1.connect_get_namespaced_pod_exec,
+            pod_name,
+            ns,
+            command=cmd,
+            **({"container": selected_container} if selected_container else {}),
+            stderr=True,
+            stdin=False,
+            stdout=True,
+            tty=False,
+            _preload_content=False,
+        )
+    except Exception as e:
+        return {
+            "namespace": ns,
+            "pod_name": pod_name,
+            "label_selector": selected_label_selector,
+            "container": selected_container,
+            "command": cmd,
+            "stdout": "",
+            "stderr": _format_exception(e),
+            "exit_code": None,
+            "permission_denied": False,
+            "error": "exec_stream_error",
+        }
+    stdout_chunks: List[str] = []
+    stderr_chunks: List[str] = []
+    exit_code: Optional[int] = None
+    start = time.time()
+    try:
+        while resp.is_open():
+            resp.update(timeout=1)
+            if resp.peek_stdout():
+                stdout_chunks.append(resp.read_stdout())
+            if resp.peek_stderr():
+                stderr_chunks.append(resp.read_stderr())
+            if time.time() - start > timeout_seconds:
+                resp.close()
+                stdout = "".join(stdout_chunks).strip()
+                stderr = "".join(stderr_chunks).strip()
+                return {
+                    "namespace": ns,
+                    "pod_name": pod_name,
+                    "label_selector": selected_label_selector,
+                    "container": selected_container,
+                    "command": cmd,
+                    "stdout": stdout,
+                    "stderr": stderr or "exec timeout",
+                    "exit_code": None,
+                    "permission_denied": False,
+                    "error": "exec_timeout",
+                }
+        for c in getattr(resp, "channel", {}).values():
+            if isinstance(c, str) and "exit code" in c.lower():
+                digits = "".join(ch for ch in c if ch.isdigit())
+                if digits:
+                    exit_code = int(digits)
+                    break
+    except Exception as e:
+        try:
+            resp.close()
+        except Exception:
+            pass
+        stdout = "".join(stdout_chunks).strip()
+        stderr = "".join(stderr_chunks).strip()
+        return {
+            "namespace": ns,
+            "pod_name": pod_name,
+            "label_selector": selected_label_selector,
+            "container": selected_container,
+            "command": cmd,
+            "stdout": stdout,
+            "stderr": stderr or _format_exception(e),
+            "exit_code": None,
+            "permission_denied": False,
+            "error": "exec_stream_error",
+        }
     stdout = "".join(stdout_chunks).strip()
     stderr = "".join(stderr_chunks).strip()
     lowered = stderr.lower()

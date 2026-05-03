@@ -16,7 +16,7 @@
 - 已具备：GitOps 失败发布模拟器（imagepull/crashloop），落盘 `reports/release_failure-<thread_id>.json`（release_id/对象/时间窗）
 - 已具备：VictoriaLogs 单实例 + Fluent Bit 容器日志采集 + event-exporter 事件采集（均写入 VictoriaLogs）的最小清单（Kustomize）
 - 已修复：Fluent Bit 写入 VictoriaLogs 的 _msg 映射（_msg_field=message，Lua 兜底 message=log），避免查询结果出现 “missing _msg field”
-- 已具备：VictoriaLogs 查询工具（基于 exec_in_sandbox 的 Python HTTP 调用）并接入运行时；main.py 自动注入最新 release_failure 上下文；报告模板增加 时间线/证据索引/回滚点 章节要求
+- 已具备：VictoriaLogs 查询工具（基于 exec_in_sandbox 的 Python HTTP 调用）并接入运行时；已修复 victorialogs_query 缺少 docstring 导致 LangChain 工具构建失败；已增加工具异常兜底（exec_in_sandbox/victorialogs_query/run_supervisor），避免 tool 抛异常导致主流程退出；main.py 自动注入最新 release_failure 上下文；报告模板增加 时间线/证据索引/回滚点 章节要求
 - 待完善：按需求补充检查项、扩展子智能体角色、完善报告模板与验收用例
 
 ## 关键决策

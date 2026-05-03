@@ -11,29 +11,24 @@
 
 ## 本次目标（只写一个）
 
-- 实现 Task8：修复 Fluent Bit 输出到 VictoriaLogs 的 _msg/_time 映射；调整 event-exporter maxEventAgeSeconds；在 kind 用 curl 查询验证 _msg 可检索
+- 为工具调用增加异常兜底，避免 tool 抛异常导致主流程退出（tooled 异常兜底）。
 
 ## 变更与证据
 
 - 变更点：
-  - `manifests/gitops/victorialogs/fluent-bit-configmap.yaml`：_msg_field 从 log 改为 message，并在 Lua 中兜底 message=log
-  - `manifests/gitops/victorialogs/event-exporter-configmap.yaml`：maxEventAgeSeconds 从 10 调整为 600
+  - `k8s_sandbox.py`：exec_in_sandbox 捕获 kubeconfig/K8s API/exec stream 异常并返回结构化 error
+  - `agent_core/victorialogs.py`：victorialogs_query 增加入参校验与 try/except，避免 int()/sandbox 异常冒泡
+  - `agent_core/runtime.py`：run_supervisor 捕获 stream 异常，并在 finally 尽量落盘 token_usage
 - 验证证据：
-  - kind 中应用变更并重启采集链路：`kubectl apply -k manifests/gitops/victorialogs` + `kubectl -n observability rollout restart ds/fluent-bit deploy/event-exporter`
-  - Kind curl 查询可返回真实 `_msg`（不再是 “missing _msg field”）：
-    - `curl -X POST -H 'Content-Type: application/x-www-form-urlencoded' --data 'query=HTTP&limit=1' http://127.0.0.1:19428/select/logsql/query`
-  - `./init.sh` 单测全量通过（35 passed）
+  - `./init.sh` 单测全量通过（43 passed）
 
 ## 当前阻塞/风险
 
-- 若 `.demo/kubeconfig` 缺失或内容损坏，Kubernetes client 加载会失败（与集群未就绪属于同类失败）
+- 若后续继续新增函数型工具（直接把函数塞进 tools 列表），需确保提供 docstring 或显式 description
 
 ## 下一步（最小可执行）
 
-- 本地最小验证（无需手动 export KUBECONFIG）：
-  - `uv run python kind_demo.py up --name demo04`
-  - `uv run python gitops_demo.py metadata --cluster-name demo04`
-  - `uv run python kind_demo.py down --name demo04`
+- 若要继续完善 feat-005（多智能体协作工作流），优先补齐：子智能体返回结构化证据、Supervisor 汇总落盘、报告章节验收用例。
 
 ## 结束前检查
 

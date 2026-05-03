@@ -69,3 +69,21 @@ class TestVictoriaLogsTool(TestCase):
         self.assertIn("results", out["result"])
         self.assertEqual(captured["command"][0], "python")
         self.assertEqual(captured["command"][1], "-c")
+
+    def test_victorialogs_query_rejects_invalid_timeout_seconds(self):
+        out = victorialogs_query(query="error", timeout_seconds="x")
+        self.assertEqual(out.get("error"), "invalid_timeout_seconds")
+
+    def test_victorialogs_query_rejects_invalid_sandbox_timeout_seconds(self):
+        out = victorialogs_query(query="error", sandbox_timeout_seconds="x")
+        self.assertEqual(out.get("error"), "invalid_sandbox_timeout_seconds")
+
+    def test_victorialogs_query_catches_sandbox_exec_exception(self):
+        def boom(**kwargs):
+            raise RuntimeError("sandbox down")
+
+        with patch("agent_core.victorialogs.exec_in_sandbox", new=boom):
+            out = victorialogs_query(query="error")
+        self.assertEqual(out.get("tool"), "victorialogs_query")
+        self.assertEqual(out.get("error"), "sandbox_exec_exception")
+        self.assertIn("sandbox down", out.get("message", ""))

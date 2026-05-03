@@ -112,6 +112,59 @@ class TestKubernetesSDKCalls(unittest.TestCase):
         self.assertEqual(res["error"], "exec_timeout")
         self.assertEqual(res["stderr"], "exec timeout")
 
+    @patch("k8s_sandbox._get_core_v1")
+    def test_exec_returns_error_when_kubeconfig_fails(self, get_core_mock):
+        get_core_mock.side_effect = RuntimeError("boom")
+        res = k8s_sandbox.exec_in_sandbox(namespace="default", pod_name="p", command=["echo", "hi"])
+        self.assertEqual(res["error"], "kubeconfig_error")
+        self.assertIn("RuntimeError", res["stderr"])
+
+    @patch("k8s_sandbox._get_core_v1")
+    def test_exec_returns_error_when_list_pods_raises(self, get_core_mock):
+        core = Mock()
+        get_core_mock.return_value = core
+        core.list_namespaced_pod.side_effect = Exception("api down")
+        res = k8s_sandbox.exec_in_sandbox(
+            namespace="default",
+            label_selector="app=k8s-sandbox,sandbox-id=abc123",
+            command=["echo", "hi"],
+        )
+        self.assertEqual(res["error"], "k8s_api_error")
+        self.assertIn("api down", res["stderr"])
+
+    @patch("k8s_sandbox._get_core_v1")
+    @patch("k8s_sandbox.stream")
+    def test_exec_returns_error_when_stream_raises(self, stream_mock, get_core_mock):
+        core = Mock()
+        get_core_mock.return_value = core
+        core.read_namespaced_pod.return_value = SimpleNamespace(spec=SimpleNamespace(containers=[SimpleNamespace(name="sandbox")]))
+        stream_mock.side_effect = RuntimeError("ws failed")
+        res = k8s_sandbox.exec_in_sandbox(namespace="default", pod_name="p", command=["echo", "hi"])
+        self.assertEqual(res["error"], "exec_stream_error")
+        self.assertIn("ws failed", res["stderr"])
+
+    @patch("k8s_sandbox._get_core_v1")
+    @patch("k8s_sandbox.stream")
+    def test_exec_returns_error_when_update_raises(self, stream_mock, get_core_mock):
+        core = Mock()
+        get_core_mock.return_value = core
+        core.read_namespaced_pod.return_value = SimpleNamespace(spec=SimpleNamespace(containers=[SimpleNamespace(name="sandbox")]))
+
+        resp = SimpleNamespace()
+        resp.is_open = lambda: True
+        resp.update = lambda timeout=1: (_ for _ in ()).throw(RuntimeError("update failed"))
+        resp.peek_stdout = lambda: False
+        resp.read_stdout = lambda: ""
+        resp.peek_stderr = lambda: False
+        resp.read_stderr = lambda: ""
+        resp.close = lambda: None
+        resp.channel = {}
+        stream_mock.return_value = resp
+
+        res = k8s_sandbox.exec_in_sandbox(namespace="default", pod_name="p", command=["echo", "hi"])
+        self.assertEqual(res["error"], "exec_stream_error")
+        self.assertIn("update failed", res["stderr"])
+
 
 if __name__ == "__main__":
     unittest.main()

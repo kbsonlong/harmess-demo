@@ -38,7 +38,7 @@
       "description": "Supervisor 强制 plan→assign→aggregate→report，子专家按职责分工并将证据落盘到 reports/",
       "dependencies": ["feat-004"],
       "status": "in-progress",
-      "evidence": "main.py/test.py 已实现子智能体与落盘约束；run_supervisor 已恢复 Token 统计并落盘 reports/token_usage-<thread_id>.json；新增 VictoriaLogs 查询工具 agent_core/victorialogs.victorialogs_query 并接入 runtime（Supervisor/子智能体均可用）；main.py 会自动注入最新 release_failure 上下文到 initial_user_message；prompts/default 与 prompts/testbench 增加时间线/证据索引/回滚点章节要求"
+      "evidence": "main.py/test.py 已实现子智能体与落盘约束；run_supervisor 已恢复 Token 统计并落盘 reports/token_usage-<thread_id>.json；新增 VictoriaLogs 查询工具 agent_core/victorialogs.victorialogs_query 并接入 runtime（Supervisor/子智能体均可用）；修复 victorialogs_query 缺少 docstring 导致 LangChain StructuredTool 构建失败；新增 tool 异常兜底：exec_in_sandbox/victorialogs_query 捕获异常返回结构化 error，run_supervisor 捕获 stream 异常并在 finally 尽量落盘 token_usage（./init.sh：43 passed）；main.py 会自动注入最新 release_failure 上下文到 initial_user_message；prompts/default 与 prompts/testbench 增加时间线/证据索引/回滚点章节要求"
     },
     {
       "id": "feat-006",

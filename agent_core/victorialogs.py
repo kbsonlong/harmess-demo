@@ -20,6 +20,17 @@ def victorialogs_query(
     container: Optional[str] = None,
     sandbox_timeout_seconds: int = 30,
 ) -> dict[str, Any]:
+    """
+    通过沙箱 Pod 查询 VictoriaLogs（LogSQL）。
+
+    用法：
+    - 单条查询：传入 query（字符串），可选 start/end/limit
+    - 批量查询：传入 queries（对象数组），每项支持：id/query/start/end/limit
+
+    返回：
+    - 统一返回 dict，包含 input、sandbox 元信息与 result（或 parse_error/raw_stdout）
+    - 参数校验失败时返回 {"error": "...", "message": "..."}
+    """
     if queries is None:
         if not isinstance(query, str) or not query.strip():
             return {"error": "invalid_query", "message": "query must be non-empty string"}
@@ -50,12 +61,23 @@ def victorialogs_query(
             }
         )
 
+    try:
+        timeout_seconds_int = int(timeout_seconds)
+    except Exception:
+        return {"error": "invalid_timeout_seconds", "message": "timeout_seconds must be int"}
+    timeout_seconds_int = max(1, min(timeout_seconds_int, 120))
+    try:
+        sandbox_timeout_seconds_int = int(sandbox_timeout_seconds)
+    except Exception:
+        return {"error": "invalid_sandbox_timeout_seconds", "message": "sandbox_timeout_seconds must be int"}
+    sandbox_timeout_seconds_int = max(1, min(sandbox_timeout_seconds_int, 600))
+
     base = (base_url or "http://victorialogs.observability.svc:9428").rstrip("/")
     endpoint = f"{base}/select/logsql/query"
 
     payload = {
         "endpoint": endpoint,
-        "timeout_seconds": max(1, min(int(timeout_seconds), 120)),
+        "timeout_seconds": timeout_seconds_int,
         "queries": normalized,
     }
     payload_json = json.dumps(payload, ensure_ascii=False)
@@ -105,14 +127,36 @@ def victorialogs_query(
     )
 
     started_at = time.time()
-    exec_res = exec_in_sandbox(
-        namespace=namespace,
-        pod_name=pod_name,
-        label_selector=label_selector,
-        container=container,
-        command=["python", "-c", code],
-        timeout_seconds=int(sandbox_timeout_seconds),
-    )
+    try:
+        exec_res = exec_in_sandbox(
+            namespace=namespace,
+            pod_name=pod_name,
+            label_selector=label_selector,
+            container=container,
+            command=["python", "-c", code],
+            timeout_seconds=sandbox_timeout_seconds_int,
+        )
+    except Exception as e:
+        return {
+            "tool": "victorialogs_query",
+            "error": "sandbox_exec_exception",
+            "message": f"{type(e).__name__}: {str(e)[:500]}",
+            "input": {
+                "base_url": base,
+                "endpoint": endpoint,
+                "queries": normalized,
+                "timeout_seconds": timeout_seconds_int,
+            },
+            "sandbox": {
+                "namespace": namespace,
+                "pod_name": pod_name,
+                "container": container,
+                "exit_code": None,
+                "stderr": "",
+                "duration_ms": int((time.time() - started_at) * 1000),
+            },
+            "result": {"parse_error": True, "raw_stdout": ""},
+        }
     stdout = (exec_res.get("stdout") or "").strip()
     parsed: Optional[dict[str, Any]] = None
     if stdout:
