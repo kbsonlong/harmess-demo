@@ -38,7 +38,7 @@
       "description": "Supervisor 强制 plan→assign→aggregate→report，子专家按职责分工并将证据落盘到 reports/",
       "dependencies": ["feat-004"],
       "status": "in-progress",
-      "evidence": "main.py/test.py 已实现子智能体与落盘约束；run_supervisor 已恢复 Token 统计并落盘 reports/token_usage-<thread_id>.json；新增 VictoriaLogs 查询工具 agent_core/victorialogs.victorialogs_query 并接入 runtime（Supervisor/子智能体均可用）；补充 victorialogs_query docstring 以避免 LangChain Tool 创建时报 ValueError；main.py 会自动注入最新 release_failure 上下文到 initial_user_message；prompts/default 与 prompts/testbench 增加时间线/证据索引/回滚点章节要求；./init.sh（35 passed）"
+      "evidence": "main.py/test.py 已实现子智能体与落盘约束；run_supervisor 已恢复 Token 统计并落盘 reports/token_usage-<thread_id>.json；新增 VictoriaLogs 查询工具 agent_core/victorialogs.victorialogs_query 并接入 runtime（Supervisor/子智能体均可用）；victorialogs_query 改为本机直连/代理访问 VictoriaLogs（不再生成 python -c 代码到沙箱执行，支持 VICTORIALOGS_BASE_URL/VICTORIALOGS_PROXY_URL 或参数 base_url/proxy_url）；补充 docstring 以避免 LangChain Tool 创建时报 ValueError；main.py 会自动注入最新 release_failure 上下文到 initial_user_message；prompts/default 与 prompts/testbench 增加时间线/证据索引/回滚点章节要求；./init.sh（35 passed）"
     },
     {
       "id": "feat-006",
@@ -62,7 +62,7 @@
       "description": "提供 Argo CD 安装/暴露与 demo-app Application 的最小清单，并提供发布元数据 JSON 的落盘入口（reports/release_metadata-<thread_id>.json）。",
       "dependencies": ["feat-001"],
       "status": "done",
-      "evidence": "manifests/gitops/argocd（kustomize 引用 Argo CD 官方 install.yaml + NodePort patch；kustomization.yaml 显式 namespace: argocd，确保 namespaced 资源落在 argocd）+ manifests/gitops/argocd/apps/demo-app.yaml + gitops_demo.py(metadata/up) 生成 reports/release_metadata-<thread_id>.json；gitops_demo.py(wait_argocd_ready) 增强等待：ns/CRD(Established)/deploy --all(Available)；gitops_demo.py(inject-failure/wait-fail) 支持 imagepull/crashloop，生成 reports/release_failure-<thread_id>.json（含 release_id/对象/时间窗）；./init.sh（30 passed）"
+      "evidence": "manifests/gitops/argocd（kustomize 引用 Argo CD 官方 install.yaml + NodePort patch；kustomization.yaml 显式 namespace: argocd，确保 namespaced 资源落在 argocd）+ manifests/gitops/argocd/apps/demo-app.yaml + gitops_demo.py(metadata/up) 生成 reports/release_metadata-<thread_id>.json；gitops_demo.py(wait_argocd_ready) 增强等待：ns/CRD(Established)/deploy --all(Available)；gitops_demo.py(inject-failure/wait-fail) 支持 imagepull/crashloop，生成 reports/release_failure-<thread_id>.json（含 release_id/对象/时间窗）；文档 docs/gitops_demo_manual.md 说明手动触发/验证与 Agent 归因分析；./init.sh（35 passed）"
     },
     {
       "id": "feat-009",

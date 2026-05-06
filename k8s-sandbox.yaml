@@ -63,8 +63,8 @@ metadata:
 spec:
   restartPolicy: Never
   serviceAccountName: k8s-sandbox-sa
-  nodeSelector:
-    biz.type: common
+  # nodeSelector:
+  #   biz.type: common
   securityContext:
     runAsNonRoot: true
     runAsUser: 1000

@@ -652,7 +652,7 @@ class Inspector:
             return [self._missing_perm_finding("pods/list")]
         pods = _pagination_loop(
             list_func=self.core.list_pod_for_all_namespaces,
-            field_selector="status.phase!=Succeeded",
+            field_selector="status.phase!=Running",
             limit=200,
             max_items=min(cfg.max_items_scanned, 1500),
         )

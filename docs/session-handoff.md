@@ -11,23 +11,23 @@
 
 ## 本次目标（只写一个）
 
-- 修复 test.py 启动时报错：LangChain Tool 创建失败（victorialogs_query 缺失 docstring）
+- 调整 victorialogs_query：改为本机直连/代理访问 VictoriaLogs，不再生成代码到沙箱执行
 
 ## 变更与证据
 
 - 变更点：
-  - `agent_core/victorialogs.py`：为 `victorialogs_query` 补充 docstring，作为 Tool description 来源
+  - `agent_core/victorialogs.py`：`victorialogs_query` 改为本机 HTTP 直连/代理请求（支持 base_url/proxy_url 与环境变量），不再调用 exec_in_sandbox
+  - `tests/test_victorialogs_tool.py`：单测改为 mock 直连 HTTP 路径
 - 验证证据：
-  - `uv run python test.py`（退出码 0，不再抛 ValueError: Function must have a docstring）
   - `./init.sh` 单测全量通过（35 passed）
 
 ## 当前阻塞/风险
 
-- 无（本次变更不涉及集群/清单）
+- 若在本机运行且未配置 VictoriaLogs 可达地址，需要设置 VICTORIALOGS_BASE_URL（例如 port-forward 后的本机地址）或使用代理
 
 ## 下一步（最小可执行）
 
-- 若要继续推进多智能体链路：优先补齐更多 tools 的 docstring/description，并保持 `./init.sh` 通过
+- 在 Kind 本地验证 VictoriaLogs 直连：对 Service 做 port-forward，然后设置 VICTORIALOGS_BASE_URL，最后用 victorialogs_query 进行一次查询回归
 
 ## 结束前检查
 

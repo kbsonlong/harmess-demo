@@ -1,8 +1,20 @@
 import json
+import os
 import time
 from typing import Any, Optional
 
-from k8s_sandbox import exec_in_sandbox
+import urllib.error
+import urllib.parse
+import urllib.request
+
+
+def _urlopen(req: urllib.request.Request, *, timeout: int, proxy_url: Optional[str]):
+    if proxy_url:
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
+        )
+        return opener.open(req, timeout=timeout)
+    return urllib.request.urlopen(req, timeout=timeout)
 
 
 def victorialogs_query(
@@ -14,13 +26,9 @@ def victorialogs_query(
     end: Optional[str] = None,
     limit: int = 50,
     timeout_seconds: int = 20,
-    namespace: Optional[str] = None,
-    pod_name: Optional[str] = None,
-    label_selector: Optional[str] = None,
-    container: Optional[str] = None,
-    sandbox_timeout_seconds: int = 30,
+    proxy_url: Optional[str] = None,
 ) -> dict[str, Any]:
-    """在沙箱 Pod 内查询 VictoriaLogs（支持单条 query 或批量 queries），返回结构化结果。"""
+    """直连或通过代理查询 VictoriaLogs（支持单条 query 或批量 queries），返回结构化结果。"""
     if queries is None:
         if not isinstance(query, str) or not query.strip():
             return {"error": "invalid_query", "message": "query must be non-empty string"}
@@ -51,76 +59,74 @@ def victorialogs_query(
             }
         )
 
-    base = (base_url or "http://victorialogs.observability.svc:9428").rstrip("/")
+    base = (
+        (base_url or os.environ.get("VICTORIALOGS_BASE_URL") or "http://victorialogs.observability.svc:9428")
+    ).rstrip("/")
     endpoint = f"{base}/select/logsql/query"
 
-    payload = {
-        "endpoint": endpoint,
-        "timeout_seconds": max(1, min(int(timeout_seconds), 120)),
-        "queries": normalized,
-    }
-    payload_json = json.dumps(payload, ensure_ascii=False)
-
-    code = (
-        "import json,sys,urllib.request,urllib.parse,time\n"
-        f"payload=json.loads({payload_json!r})\n"
-        "endpoint=payload['endpoint']\n"
-        "timeout=payload.get('timeout_seconds',20)\n"
-        "queries=payload.get('queries') or []\n"
-        "out={'endpoint': endpoint, 'generated_at': time.time(), 'results': []}\n"
-        "for q in queries:\n"
-        "    data={'query': q['query'], 'limit': q.get('limit',50)}\n"
-        "    if q.get('start'):\n"
-        "        data['start']=q['start']\n"
-        "    if q.get('end'):\n"
-        "        data['end']=q['end']\n"
-        "    body=urllib.parse.urlencode(data).encode('utf-8')\n"
-        "    req=urllib.request.Request(endpoint, data=body, method='POST')\n"
-        "    req.add_header('Content-Type','application/x-www-form-urlencoded')\n"
-        "    started=time.time()\n"
-        "    items=[]\n"
-        "    errors=[]\n"
-        "    status=None\n"
-        "    try:\n"
-        "        with urllib.request.urlopen(req, timeout=timeout) as resp:\n"
-        "            status=getattr(resp,'status',None)\n"
-        "            while True:\n"
-        "                line=resp.readline()\n"
-        "                if not line:\n"
-        "                    break\n"
-        "                if len(items) >= int(q.get('limit',50)):\n"
-        "                    break\n"
-        "                s=line.decode('utf-8', errors='replace').strip()\n"
-        "                if not s:\n"
-        "                    continue\n"
-        "                try:\n"
-        "                    items.append(json.loads(s))\n"
-        "                except Exception as e:\n"
-        "                    errors.append({'line': s[:2000], 'error': str(e)[:300]})\n"
-        "                    if len(errors) >= 3:\n"
-        "                        break\n"
-        "    except Exception as e:\n"
-        "        errors.append({'error': str(e)[:500]})\n"
-        "    out['results'].append({'id': q.get('id'), 'query': q.get('query'), 'start': q.get('start'), 'end': q.get('end'), 'limit': q.get('limit'), 'http_status': status, 'duration_s': round(time.time()-started, 6), 'items': items, 'errors': errors})\n"
-        "print(json.dumps(out, ensure_ascii=False))\n"
-    )
-
     started_at = time.time()
-    exec_res = exec_in_sandbox(
-        namespace=namespace,
-        pod_name=pod_name,
-        label_selector=label_selector,
-        container=container,
-        command=["python", "-c", code],
-        timeout_seconds=int(sandbox_timeout_seconds),
-    )
-    stdout = (exec_res.get("stdout") or "").strip()
-    parsed: Optional[dict[str, Any]] = None
-    if stdout:
+    timeout_int = max(1, min(int(timeout_seconds), 120))
+    proxy = proxy_url or os.environ.get("VICTORIALOGS_PROXY_URL")
+
+    out: dict[str, Any] = {"endpoint": endpoint, "generated_at": time.time(), "results": []}
+    for q in normalized:
+        data: dict[str, Any] = {"query": q["query"], "limit": q.get("limit", 50)}
+        if q.get("start"):
+            data["start"] = q["start"]
+        if q.get("end"):
+            data["end"] = q["end"]
+
+        body = urllib.parse.urlencode(data).encode("utf-8")
+        req = urllib.request.Request(endpoint, data=body, method="POST")
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+
+        q_started = time.time()
+        items: list[Any] = []
+        errors: list[dict[str, Any]] = []
+        status: Optional[int] = None
+
         try:
-            parsed = json.loads(stdout)
-        except Exception:
-            parsed = None
+            with _urlopen(req, timeout=timeout_int, proxy_url=proxy) as resp:
+                status = getattr(resp, "status", None)
+                while True:
+                    line = resp.readline()
+                    if not line:
+                        break
+                    if len(items) >= int(q.get("limit", 50)):
+                        break
+                    s = line.decode("utf-8", errors="replace").strip()
+                    if not s:
+                        continue
+                    try:
+                        items.append(json.loads(s))
+                    except Exception as e:
+                        errors.append({"line": s[:2000], "error": str(e)[:300]})
+                        if len(errors) >= 3:
+                            break
+        except urllib.error.HTTPError as e:
+            status = getattr(e, "code", None)
+            body_preview = ""
+            try:
+                body_preview = (e.read(2000) or b"").decode("utf-8", errors="replace")
+            except Exception:
+                body_preview = ""
+            errors.append({"error": str(e)[:500], "body": body_preview})
+        except Exception as e:
+            errors.append({"error": str(e)[:500]})
+
+        out["results"].append(
+            {
+                "id": q.get("id"),
+                "query": q.get("query"),
+                "start": q.get("start"),
+                "end": q.get("end"),
+                "limit": q.get("limit"),
+                "http_status": status,
+                "duration_s": round(time.time() - q_started, 6),
+                "items": items,
+                "errors": errors,
+            }
+        )
 
     return {
         "tool": "victorialogs_query",
@@ -128,15 +134,12 @@ def victorialogs_query(
             "base_url": base,
             "endpoint": endpoint,
             "queries": normalized,
-            "timeout_seconds": timeout_seconds,
+            "timeout_seconds": timeout_int,
+            "proxy_url": proxy,
         },
-        "sandbox": {
-            "namespace": exec_res.get("namespace"),
-            "pod_name": exec_res.get("pod_name"),
-            "container": exec_res.get("container"),
-            "exit_code": exec_res.get("exit_code"),
-            "stderr": (exec_res.get("stderr") or "").strip(),
+        "transport": {
+            "mode": "direct",
             "duration_ms": int((time.time() - started_at) * 1000),
         },
-        "result": parsed if parsed is not None else {"raw_stdout": stdout[:8000], "parse_error": True},
+        "result": out,
     }

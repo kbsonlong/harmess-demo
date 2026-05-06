@@ -49,23 +49,35 @@ class TestVictoriaLogsTool(TestCase):
         out = victorialogs_query(query="  ")
         self.assertEqual(out.get("error"), "invalid_query")
 
-    def test_victorialogs_query_parses_sandbox_stdout_json(self):
-        sandbox_stdout = json.dumps(
-            {"endpoint": "http://x/select/logsql/query", "generated_at": 1, "results": [{"id": "q1", "items": []}]},
-            ensure_ascii=False,
-        )
-
+    def test_victorialogs_query_reads_jsonlines_response(self):
         captured = {}
 
-        def fake_exec_in_sandbox(**kwargs):
-            captured.update(kwargs)
-            return {"stdout": sandbox_stdout, "stderr": "", "exit_code": 0, "namespace": "default", "pod_name": "p", "container": "c"}
+        class FakeResp:
+            def __init__(self, *, lines: list[bytes], status: int = 200):
+                self._lines = lines
+                self.status = status
 
-        with patch("agent_core.victorialogs.exec_in_sandbox", new=fake_exec_in_sandbox):
-            out = victorialogs_query(query="error", limit=5)
+            def readline(self) -> bytes:
+                if not self._lines:
+                    return b""
+                return self._lines.pop(0)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def fake_urlopen(req, *, timeout, proxy_url):
+            captured["url"] = req.get_full_url()
+            captured["timeout"] = timeout
+            captured["proxy_url"] = proxy_url
+            return FakeResp(lines=[b'{"_msg":"hello"}\n', b'{"_msg":"world"}\n'])
+
+        with patch("agent_core.victorialogs._urlopen", new=fake_urlopen):
+            out = victorialogs_query(query="error", limit=5, base_url="http://x")
         self.assertEqual(out["tool"], "victorialogs_query")
         self.assertIn("/select/logsql/query", out["input"]["endpoint"])
         self.assertIsInstance(out["result"], dict)
         self.assertIn("results", out["result"])
-        self.assertEqual(captured["command"][0], "python")
-        self.assertEqual(captured["command"][1], "-c")
+        self.assertIn("/select/logsql/query", captured["url"])
