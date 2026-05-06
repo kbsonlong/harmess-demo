@@ -11,29 +11,23 @@
 
 ## 本次目标（只写一个）
 
-- 实现 Task8：修复 Fluent Bit 输出到 VictoriaLogs 的 _msg/_time 映射；调整 event-exporter maxEventAgeSeconds；在 kind 用 curl 查询验证 _msg 可检索
+- 修复 test.py 启动时报错：LangChain Tool 创建失败（victorialogs_query 缺失 docstring）
 
 ## 变更与证据
 
 - 变更点：
-  - `manifests/gitops/victorialogs/fluent-bit-configmap.yaml`：_msg_field 从 log 改为 message，并在 Lua 中兜底 message=log
-  - `manifests/gitops/victorialogs/event-exporter-configmap.yaml`：maxEventAgeSeconds 从 10 调整为 600
+  - `agent_core/victorialogs.py`：为 `victorialogs_query` 补充 docstring，作为 Tool description 来源
 - 验证证据：
-  - kind 中应用变更并重启采集链路：`kubectl apply -k manifests/gitops/victorialogs` + `kubectl -n observability rollout restart ds/fluent-bit deploy/event-exporter`
-  - Kind curl 查询可返回真实 `_msg`（不再是 “missing _msg field”）：
-    - `curl -X POST -H 'Content-Type: application/x-www-form-urlencoded' --data 'query=HTTP&limit=1' http://127.0.0.1:19428/select/logsql/query`
+  - `uv run python test.py`（退出码 0，不再抛 ValueError: Function must have a docstring）
   - `./init.sh` 单测全量通过（35 passed）
 
 ## 当前阻塞/风险
 
-- 若 `.demo/kubeconfig` 缺失或内容损坏，Kubernetes client 加载会失败（与集群未就绪属于同类失败）
+- 无（本次变更不涉及集群/清单）
 
 ## 下一步（最小可执行）
 
-- 本地最小验证（无需手动 export KUBECONFIG）：
-  - `uv run python kind_demo.py up --name demo04`
-  - `uv run python gitops_demo.py metadata --cluster-name demo04`
-  - `uv run python kind_demo.py down --name demo04`
+- 若要继续推进多智能体链路：优先补齐更多 tools 的 docstring/description，并保持 `./init.sh` 通过
 
 ## 结束前检查
 

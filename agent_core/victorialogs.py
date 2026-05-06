@@ -20,6 +20,7 @@ def victorialogs_query(
     container: Optional[str] = None,
     sandbox_timeout_seconds: int = 30,
 ) -> dict[str, Any]:
+    """在沙箱 Pod 内查询 VictoriaLogs（支持单条 query 或批量 queries），返回结构化结果。"""
     if queries is None:
         if not isinstance(query, str) or not query.strip():
             return {"error": "invalid_query", "message": "query must be non-empty string"}
