@@ -11,7 +11,7 @@ This is a Kubernetes cluster inspection and health-check system that uses a mult
 Project-specific definitions for the “Harness 五子系统模型” live in `AGENTS.md` (root) and `docs/PROGRESS.md`.
 
 **Key Architecture:**
-- **Multi-agent system**: Supervisor agent delegates to expert sub-agents (infra_expert, workload_expert) with a strict workflow (plan → assign → aggregate → report)
+- **Multi-agent system**: Supervisor (Coordinator) orchestrates three sub-agents: planner → executor → validator, enforcing a strict workflow (plan → execute → validate → aggregate → report)
 - **Sandbox execution**: All cluster inspection commands run through `k8s_sandbox.exec_in_sandbox()` which executes inside privileged sandbox pods with read-only RBAC
 - **Structured inspection**: The `sandbox_inspector` module performs comprehensive health checks and outputs JSON with severity-graded findings (P0/P1/P2)
 - **Skills system**: Domain knowledge is stored in `skills/k8s-inspector/SKILL.md` which agents use to guide inspection procedures

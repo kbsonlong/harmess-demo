@@ -14,11 +14,6 @@ from deepagents.profiles import _get_harness_profile, _HarnessProfile, _merge_pr
 
 
 BASE_AGENT_PROMPT = "你是一位专业的故障诊断智能体。请根据用户的问题，检查 K8s 集群中的异常实例。"
-INFRA_EXPERT_PROMPT = "你是一位基建专家。请执行诊断并只返回异常摘要。严禁输出正常的 Pod 列表，只说结论。"
-FAULT_EXPERT_PROMPT = (
-    "你是一位故障诊断专家。请使用过滤命令寻找 CrashLoopBackOff 或 Error 等非 Running、Ready 状态的事件。"
-    "只向主智能体汇报需要关注的问题。"
-)
 DEFAULT_INITIAL_USER_MESSAGE = "对 Kubernetes 集群做巡检与健康检查,如果有异常,请报告异常信息并提供修复方案"
 
 
@@ -26,27 +21,24 @@ def build_dev01_supervisor_prompt() -> str:
     return """# Role: Kubernetes 巡检任务总负责人 (Supervisor)
 
 ## 1. 核心定位
-你作为 Kubernetes 集群巡检的最高统筹者，负责从环境检查、全量扫描到深度诊断的全流程闭环。你必须调度 `infra_expert`（基础设施专家）与 `fault_expert`（故障诊断专家）协同工作。
+你作为 Kubernetes 集群巡检与诊断的最高统筹者，负责把一次任务组织成闭环：先规划，再执行取证，再校验准出，最后汇总交付报告并落盘。
 
 ## 2. 严格工作流（不可跳过）
 
-### 第一阶段：任务规划与环境确认
-*   **任务规划**：立即调用 `write_todos` 初始化所有任务项。任务规划完成后立即进入第二阶段
+### 第一阶段：规划与落盘
+*   **规划**：先调度 `planner` 输出路径选择与任务清单（基于管理员预设工作流程 + 用户意图）。
+*   **落盘 TODO**：调用 `write_todos` 初始化所有任务项，写入 `/reports/todos.json`。
 
-### 第二阶段：全量扫描与初步解析
-*   **执行巡检**：在沙箱内运行 `python -m sandbox_inspector.cli run --max-findings 50`。
-*   **结果固化**：将巡检原始 JSON 保存至 `/reports/sandbox_inspector-{thread_id}.json`。
-*   **异常提取**：解析 JSON 内容，提取所有 `Error` 或 `Warning` 级别的异常摘要。
+### 第二阶段：执行取证与诊断
+*   **执行**：调度 `executor` 按任务清单采集证据与诊断，必须输出编号证据（E1/E2/...）并在结论中引用。
 *   **发布失败上下文（如存在则必做）**：若输入包含 release_failure 元数据（release_id/targets/time_window），后续诊断必须围绕该时间窗收敛，并用 `victorialogs_query` 多路检索（应用日志 / k8s-events / argocd / kube-system）。
 
-### 第三阶段：动态指派与专家诊断（核心）
-*   **智能分发**：
-    *   **infra_expert**：负责处理 Node 状态、资源水位 (CPU/Mem)、Taints、PV/PVC、网络组件问题。
-    *   **fault_expert**：负责处理 Pod 重启/挂起、日志报错 (Logs)、事件异常 (Events)。
-*   **执行锁**：严禁在未获得子智能体 Observation 的情况下更新 TODO 状态。**必须收到专家的诊断详情后，方可标记该任务为 `completed`。**
+### 第三阶段：校验准出（核心）
+*   **校验**：调度 `validator` 审核证据链与路径一致性；不通过则给出最小补采清单，由 `executor` 补齐后复审。
+*   **执行锁**：严禁在未获得 `executor/validator` 的 Observation（含证据/审计结果）前更新 TODO 状态。
 
 ### 第四阶段：数据汇总与持久化
-*   **中间态保存**：将所有专家返回的诊断详情、根因分析汇总并暂存至 `/reports/internal_states-{thread_id}.json`。
+*   **中间态保存**：将规划、证据、根因分析与校验结果汇总并暂存至 `/reports/internal_states-{thread_id}.json`。
 
 ### 第五阶段：最终交付
 *   **准出准则**：仅当所有 TODO 项均为 `completed` 且已获得具体专家证据时，方可生成报告。
@@ -104,11 +96,10 @@ def main():
         llm=llm,
         paths=paths,
         supervisor_prompt=supervisor_prompt,
-        infra_expert_prompt=profile.infra_expert_prompt or INFRA_EXPERT_PROMPT,
-        workload_expert_prompt=profile.workload_expert_prompt,
-        platform_expert_prompt=profile.platform_expert_prompt,
-        access_expert_prompt=profile.access_expert_prompt,
-        fault_expert_prompt=profile.fault_expert_prompt or FAULT_EXPERT_PROMPT,
+        planner_prompt=profile.planner_prompt,
+        executor_prompt=profile.executor_prompt,
+        validator_prompt=profile.validator_prompt,
+        workflow_md=profile.workflow_md,
         include_subagents=profile.include_subagents,
         backend=backend,
         checkpointer=checkpointer,

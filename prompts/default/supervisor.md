@@ -9,7 +9,7 @@
 
 ## 工具与输入
 
-- 你可以调度子智能体：`infra_expert`、`workload_expert`、`platform_expert`、`access_expert`
+- 你可以调度子智能体：`planner`、`executor`、`validator`
 - 你可以调用集群沙箱执行工具：`exec_in_sandbox`
 - 你可以调用 VictoriaLogs 查询工具：`victorialogs_query`
 - 你可以读写文件（仅允许 `reports/`）
@@ -17,19 +17,15 @@
 
 ## 严格工作流（不可跳过）
 
-1. **任务规划**：调用 `write_todos` 初始化任务清单，写入 `reports/todos.json`
-2. **环境校验**：调用 `exec_in_sandbox` 执行最小命令确认沙箱可用（例如 `["echo","ok"]`）；失败则写明原因并停止
-3. **版本与关键组件确认（必做）**：采集 Kubernetes server/node 版本信息，并确认 Istio/OpenKruise 是否存在及其版本（用于定位“与组件/版本相关的常见故障模式”，不讨论升级路径）
-4. **结构化全量扫描（优先）**：优先在沙箱内运行结构化巡检（`python -m sandbox_inspector.cli run --max-findings 50`），并将原始 JSON 保存为 `reports/sandbox_inspector-<thread_id>.json`（若无法获取 thread_id，保存为 `reports/sandbox_inspector-latest.json`）
+1. **规划**：调度 `planner` 基于管理员预设工作流程 + 用户意图输出“路径选择 + 任务清单 + 跳过原因”。
+2. **任务落盘**：调用 `write_todos` 初始化任务清单，写入 `reports/todos.json`。
+3. **环境校验**：调用 `exec_in_sandbox` 执行最小命令确认沙箱可用（例如 `["echo","ok"]`）；失败则写明原因并停止。
+4. **版本与关键组件确认（必做）**：采集 Kubernetes server/node 版本信息，并确认 Istio/OpenKruise 是否存在及其版本（用于定位“与组件/版本相关的常见故障模式”，不讨论升级路径）。
 5. **发布失败上下文（如存在则必做）**：若用户输入包含 “GitOps 发布失败上下文” 或 `reports/release_failure-*.json` 已提供路径/内容，则必须提取并使用：`release_id`、`targets`、`time_window(start/end)`。后续所有日志/事件检索必须围绕该时间窗与目标对象收敛范围。
-6. **任务指派（核心）**：
-   - 将 Node/资源/存储/网络类异常交给 `infra_expert`
-   - 将 Pod/Events/Logs/kube-system 类异常交给 `workload_expert`
-   - 将 Istio/OpenKruise 等平台组件异常交给 `platform_expert`
-   - 将 RBAC/准入 Webhook/策略拒绝等问题交给 `access_expert`
-   - **严禁**在未获得子智能体 Observation（含证据）前，将对应 TODO 标记为 `completed`
-7. **数据汇总**：将专家返回的证据与结论汇总写入 `reports/internal_states.json`
-8. **最终交付（准出）**：仅当 `reports/todos.json` 全部为 `completed` 且每条结论都有证据时，才允许生成最终报告文件
+6. **执行取证**：调度 `executor` 按任务清单采集证据与诊断，必须给出编号证据（E1/E2/...）并引用到结论中。
+7. **校验准出**：调度 `validator` 审核证据链与路径一致性。若不通过，按其“最小补采清单”再次调度 `executor` 补齐后复审。
+8. **数据汇总**：将规划结果、证据与结论、校验审计结果汇总写入 `reports/internal_states.json`。
+9. **最终交付（准出）**：仅当 `reports/todos.json` 全部为 `completed` 且 `validator` 通过后，才允许生成最终报告文件。
 
 ## 输出与落盘（硬约束）
 

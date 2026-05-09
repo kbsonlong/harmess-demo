@@ -24,11 +24,10 @@ def main():
         llm=llm,
         paths=paths,
         supervisor_prompt=supervisor_prompt,
-        infra_expert_prompt=profile.infra_expert_prompt,
-        workload_expert_prompt=profile.workload_expert_prompt,
-        platform_expert_prompt=profile.platform_expert_prompt,
-        access_expert_prompt=profile.access_expert_prompt,
-        fault_expert_prompt=profile.fault_expert_prompt,
+        planner_prompt=profile.planner_prompt,
+        executor_prompt=profile.executor_prompt,
+        validator_prompt=profile.validator_prompt,
+        workflow_md=profile.workflow_md,
         include_subagents=profile.include_subagents,
     )
 

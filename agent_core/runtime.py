@@ -13,70 +13,60 @@ from .config import ProjectPaths
 from .logging import TokenUsageTracker, ToolEventPrinter
 
 
+def _inject_admin_workflow(prompt: Optional[str], workflow_md: Optional[str]) -> Optional[str]:
+    if not prompt:
+        return prompt
+    workflow = (workflow_md or "").strip()
+    if "{{ADMIN_WORKFLOW}}" in prompt:
+        return prompt.replace("{{ADMIN_WORKFLOW}}", workflow)
+    if not workflow:
+        return prompt
+    return f"{prompt}\n\n{workflow}"
+
+
 def create_subagents(
     llm,
     *,
-    infra_expert_prompt: Optional[str] = None,
-    workload_expert_prompt: Optional[str] = None,
-    platform_expert_prompt: Optional[str] = None,
-    access_expert_prompt: Optional[str] = None,
-    fault_expert_prompt: Optional[str] = None,
+    planner_prompt: Optional[str] = None,
+    executor_prompt: Optional[str] = None,
+    validator_prompt: Optional[str] = None,
+    workflow_md: Optional[str] = None,
     include_subagents: Optional[list[str]] = None,
 ) -> list[SubAgent]:
-    infra_expert = SubAgent(
-        name="infra_expert",
-        description="基础设施专家。负责检查 K8s 节点(Node)状态、污点、资源压力，以及存储卷(PV/PVC)和网络组件。",
+    planner = SubAgent(
+        name="planner",
+        description="规划专家。负责解析用户意图与用户自定义工作流程，将任务拆分为可执行的最小证据链任务清单。",
         model=llm,
-        tools=[exec_in_sandbox, victorialogs_query],
-        system_prompt=infra_expert_prompt
-        or "你是一位基建专家。请执行诊断并只返回异常摘要。严禁输出正常的 Pod 列表，只说结论。",
+        tools=[],
+        system_prompt=_inject_admin_workflow(planner_prompt, workflow_md)
+        or "你是 Planner。只输出任务拆分与路径选择，禁止执行命令、禁止调用工具。",
     )
 
-    workload_expert = SubAgent(
-        name="workload_expert",
-        description="工作负载专家。负责检查 kube-system 组件健康度、业务 Pod 状态、异常 Events 和错误日志。",
+    executor = SubAgent(
+        name="executor",
+        description="执行专家。负责按任务清单采集证据、定位异常并给出可执行修复建议与验证点（仅建议，不做写操作）。",
         model=llm,
         tools=[exec_in_sandbox, victorialogs_query],
-        system_prompt=workload_expert_prompt
-        or "你是一位负载专家。请使用过滤命令寻找 CrashLoopBackOff 或 Error 事件。只向主智能体汇报需要关注的问题。",
+        system_prompt=executor_prompt
+        or "你是 Executor。按任务清单执行取证与诊断，编号证据并给出修复建议与验证点。严禁执行写操作。",
     )
 
-    fault_expert = SubAgent(
-        name="fault_expert",
-        description="故障诊断专家。负责检查异常工作负载状态、异常 Events 和关键错误日志，并给出可复现证据与修复建议。",
+    validator = SubAgent(
+        name="validator",
+        description="校验专家。负责审核证据链完整性与准出标准，指出缺口并给出最小补采建议。",
         model=llm,
-        tools=[exec_in_sandbox, victorialogs_query],
-        system_prompt=fault_expert_prompt
-        or "你是一位故障诊断专家。请使用过滤命令寻找 CrashLoopBackOff 或 Error 等异常，并只返回异常摘要与证据。",
-    )
-
-    platform_expert = SubAgent(
-        name="platform_expert",
-        description="平台组件专家。负责检查 Istio/OpenKruise 等平台组件异常与相关控制面问题。",
-        model=llm,
-        tools=[exec_in_sandbox, victorialogs_query],
-        system_prompt=platform_expert_prompt
-        or "你是一位平台组件专家。请只返回平台组件相关异常摘要与证据。",
-    )
-
-    access_expert = SubAgent(
-        name="access_expert",
-        description="访问与准入专家。负责检查认证/鉴权/RBAC/准入控制异常（Forbidden/Webhook/策略拒绝）。",
-        model=llm,
-        tools=[exec_in_sandbox, victorialogs_query],
-        system_prompt=access_expert_prompt
-        or "你是一位访问与准入专家。请只返回鉴权与准入相关异常摘要与证据。",
+        tools=[],
+        system_prompt=validator_prompt
+        or "你是 Validator。只做证据链审计与准出判断，禁止执行命令、禁止调用工具。",
     )
 
     by_name = {
-        "infra_expert": infra_expert,
-        "workload_expert": workload_expert,
-        "fault_expert": fault_expert,
-        "platform_expert": platform_expert,
-        "access_expert": access_expert,
+        "planner": planner,
+        "executor": executor,
+        "validator": validator,
     }
 
-    include = include_subagents or ["infra_expert", "workload_expert", "platform_expert", "access_expert"]
+    include = include_subagents or ["planner", "executor", "validator"]
     result: list[SubAgent] = []
     for name in include:
         agent = by_name.get(name)
@@ -90,11 +80,10 @@ def create_supervisor_agent(
     llm,
     paths: ProjectPaths,
     supervisor_prompt: str,
-    infra_expert_prompt: Optional[str] = None,
-    workload_expert_prompt: Optional[str] = None,
-    platform_expert_prompt: Optional[str] = None,
-    access_expert_prompt: Optional[str] = None,
-    fault_expert_prompt: Optional[str] = None,
+    planner_prompt: Optional[str] = None,
+    executor_prompt: Optional[str] = None,
+    validator_prompt: Optional[str] = None,
+    workflow_md: Optional[str] = None,
     include_subagents: Optional[list[str]] = None,
     backend: Optional[Any] = None,
     checkpointer: Optional[MemorySaver] = None,
@@ -104,11 +93,10 @@ def create_supervisor_agent(
 
     subagents = create_subagents(
         llm,
-        infra_expert_prompt=infra_expert_prompt,
-        workload_expert_prompt=workload_expert_prompt,
-        platform_expert_prompt=platform_expert_prompt,
-        access_expert_prompt=access_expert_prompt,
-        fault_expert_prompt=fault_expert_prompt,
+        planner_prompt=planner_prompt,
+        executor_prompt=executor_prompt,
+        validator_prompt=validator_prompt,
+        workflow_md=workflow_md,
         include_subagents=include_subagents,
     )
     permissions = None
