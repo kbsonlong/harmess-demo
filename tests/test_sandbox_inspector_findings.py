@@ -122,6 +122,70 @@ class TestInspectorRun(unittest.TestCase):
         self.assertEqual(findings[0]["severity"], "P1")
         self.assertEqual(findings[0]["focus_refs"][0]["name"], "bad-crashloop")
 
+    def test_check_kube_system_pods_include_namespace(self):
+        ins = Inspector.__new__(Inspector)
+        ins.config = InspectorConfig(max_findings=10)
+        ins.api_client = Mock()
+        ins.api_client.sanitize_for_serialization.side_effect = lambda x: x
+        ins.core = Mock()
+
+        permissions = {"checks": [{"group": "", "resource": "pods", "verb": "list", "allowed": True}]}
+        stats = {"scanned": {}, "truncated": {}}
+        pod = {"metadata": {"name": "coredns-0"}, "status": {"phase": "Pending"}}
+
+        with patch("sandbox_inspector.inspector._pagination_loop", return_value=[pod]):
+            findings = ins._check_kube_system(permissions, stats)
+
+        self.assertEqual(findings[0]["evidence"][0]["ref"]["pods"][0]["namespace"], "kube-system")
+        self.assertEqual(findings[0]["focus_refs"][0]["namespace"], "kube-system")
+
+    def test_check_deployments_focus_ref_has_namespace_from_object(self):
+        ins = Inspector.__new__(Inspector)
+        ins.config = InspectorConfig(max_findings=10)
+        ins.api_client = Mock()
+        ins.apps = Mock()
+
+        dep = Mock()
+        dep.metadata = Mock(namespace="ns-a", name="dep-a")
+        ins.api_client.sanitize_for_serialization.side_effect = lambda x: {
+            "metadata": {"name": "dep-a"},
+            "spec": {"replicas": 1},
+            "status": {"availableReplicas": 0},
+        }
+        stats = {"scanned": {}, "truncated": {}}
+
+        with patch("sandbox_inspector.inspector._pagination_loop", return_value=[dep]):
+            findings = ins._check_deployments(stats)
+
+        self.assertEqual(findings[0]["evidence"][0]["ref"]["deployments"][0]["namespace"], "ns-a")
+        self.assertEqual(findings[0]["focus_refs"][0]["namespace"], "ns-a")
+
+    def test_check_pods_focus_ref_has_namespace_from_object(self):
+        ins = Inspector.__new__(Inspector)
+        ins.config = InspectorConfig(max_findings=10)
+        ins.api_client = Mock()
+        ins.core = Mock()
+
+        pod = Mock()
+        pod.metadata = Mock(namespace="ns-b", name="bad-crashloop")
+        ins.api_client.sanitize_for_serialization.side_effect = lambda x: {
+            "metadata": {"name": "bad-crashloop"},
+            "status": {
+                "phase": "Running",
+                "containerStatuses": [
+                    {"ready": False, "restartCount": 3, "state": {"waiting": {"reason": "CrashLoopBackOff"}}}
+                ],
+            },
+        }
+        permissions = {"checks": [{"group": "", "resource": "pods", "verb": "list", "allowed": True}]}
+        stats = {"scanned": {}, "truncated": {}}
+
+        with patch("sandbox_inspector.inspector._pagination_loop", return_value=[pod]):
+            findings = ins._check_pods(permissions, stats)
+
+        self.assertEqual(findings[0]["evidence"][0]["ref"]["pods"][0]["namespace"], "ns-b")
+        self.assertEqual(findings[0]["focus_refs"][0]["namespace"], "ns-b")
+
 
 if __name__ == "__main__":
     unittest.main()

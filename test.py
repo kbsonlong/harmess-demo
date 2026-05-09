@@ -7,7 +7,6 @@ from dotenv import load_dotenv
 from langgraph.checkpoint.memory import MemorySaver
 
 from agent_core.config import create_llm_from_env, get_project_paths
-from agent_core.release_context import load_latest_release_failure, summarize_release_failure_context
 from agent_core.notify import notify_wecom_if_configured
 from agent_core.profile import load_profile, load_profile_from_path
 from agent_core.runtime import create_supervisor_agent, run_supervisor
@@ -32,8 +31,7 @@ def build_dev01_supervisor_prompt() -> str:
 ## 2. 严格工作流（不可跳过）
 
 ### 第一阶段：任务规划与环境确认
-*   **任务规划**：立即调用 `write_todos` 初始化所有任务项。
-*   **沙箱校验**：执行 `execute` 运行 `echo ok`。若失败，立即报错并停止。
+*   **任务规划**：立即调用 `write_todos` 初始化所有任务项。任务规划完成后立即进入第二阶段
 
 ### 第二阶段：全量扫描与初步解析
 *   **执行巡检**：在沙箱内运行 `python -m sandbox_inspector.cli run --max-findings 50`。
@@ -116,23 +114,7 @@ def main():
         checkpointer=checkpointer,
     )
 
-    release_failure = load_latest_release_failure(
-        reports_dir=paths.reports_dir,
-        thread_id=os.environ.get("RELEASE_FAILURE_THREAD_ID"),
-        explicit_path=os.environ.get("RELEASE_FAILURE_PATH"),
-    )
-    release_ctx = summarize_release_failure_context(release_failure) if isinstance(release_failure, dict) else None
     initial_user_message = profile.initial_user_message or DEFAULT_INITIAL_USER_MESSAGE
-    if release_ctx:
-        initial_user_message = (
-            initial_user_message
-            + "\n\n【GitOps 发布失败上下文】\n"
-            + f"{release_ctx}\n"
-            + "请优先围绕 release_id + time_window 做定位：\n"
-            + "- 对 targets 做 focus 深挖（Events/Logs）\n"
-            + "- 查询 VictoriaLogs：应用日志 / k8s-events / argocd / kube-system（限制条数、只取关键字段）\n"
-            + "- 在最终报告加入：时间线 / 证据索引 / 回滚点\n"
-        )
     thread_id = run_supervisor(
         agent=agent,
         initial_user_message=initial_user_message,

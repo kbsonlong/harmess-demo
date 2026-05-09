@@ -30,7 +30,7 @@
       "description": "sandbox_inspector 输出结构化 JSON：全量扫描(run) + 单资源深挖(focus)，带截断与权限探测",
       "dependencies": ["feat-003"],
       "status": "done",
-      "evidence": "sandbox_inspector/ + k8s-sandbox.yaml + run_inspection.sh；Kind demo04 二次验证已在 reports/demo04/inspection_results_round3.json 识别出 CrashLoopBackOff(P1)、ImagePullBackOff(P1)、PVC 非 Bound(P1) 与 Pending Pod(P2)"
+      "evidence": "sandbox_inspector/ + k8s-sandbox.yaml + run_inspection.sh；Kind demo04 二次验证已在 reports/demo04/inspection_results_round3.json 识别出 CrashLoopBackOff(P1)、ImagePullBackOff(P1)、PVC 非 Bound(P1) 与 Pending Pod(P2)；修复 namespaced 资源的 focus_refs/evidence namespace 可靠填充（kube-system 强制 kube-system，其余从对象 metadata 兜底）；新增单测覆盖；./init.sh（38 passed）"
     },
     {
       "id": "feat-005",

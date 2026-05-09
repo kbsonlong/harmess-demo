@@ -148,6 +148,39 @@ class Inspector:
         self.authz = client.AuthorizationV1Api(self.api_client)
         self.version = client.VersionApi(self.api_client)
 
+    def _meta_namespace(self, meta: dict[str, Any], obj: Any) -> Optional[str]:
+        ns = (meta or {}).get("namespace")
+        if ns:
+            return str(ns)
+        m = getattr(obj, "metadata", None)
+        ns2 = getattr(m, "namespace", None)
+        return str(ns2) if ns2 else None
+
+    def _meta_name(self, meta: dict[str, Any], obj: Any) -> Optional[str]:
+        name = (meta or {}).get("name")
+        if name:
+            return str(name)
+        m = getattr(obj, "metadata", None)
+        name2 = getattr(m, "name", None)
+        return str(name2) if name2 else None
+
+    def _collect_items(
+        self,
+        objs: list[Any],
+        *,
+        max_items: int,
+        build: Callable[[Any, dict[str, Any], dict[str, Any]], Optional[dict[str, Any]]],
+    ) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for obj in (objs or [])[:max_items]:
+            d = self.api_client.sanitize_for_serialization(obj)
+            meta = d.get("metadata") or {}
+            item = build(obj, d, meta)
+            if item is None:
+                continue
+            out.append(item)
+        return out
+
     def _can(self, *, group: str, resource: str, verb: str, namespace: Optional[str] = None) -> dict[str, Any]:
         """使用 SelfSubjectAccessReview 探测当前身份对资源/动词是否有权限。"""
         spec = client.V1SelfSubjectAccessReviewSpec(
@@ -417,20 +450,18 @@ class Inspector:
         stats["scanned"]["kube_system_abnormal_pods"] = len(pods)
         if not pods:
             return []
-        items: list[dict[str, Any]] = []
-        for p in pods[: cfg.max_name_list]:
-            pd = self.api_client.sanitize_for_serialization(p)
-            meta = pd.get("metadata") or {}
+
+        def build_item(p: Any, pd: dict[str, Any], meta: dict[str, Any]) -> dict[str, Any]:
             st = pd.get("status") or {}
-            items.append(
-                {
-                    "namespace": meta.get("namespace"),
-                    "name": meta.get("name"),
-                    "phase": st.get("phase"),
-                    "reason": st.get("reason"),
-                    "message": truncate_text(st.get("message"), max_chars=200),
-                }
-            )
+            return {
+                "namespace": "kube-system",
+                "name": self._meta_name(meta, p),
+                "phase": st.get("phase"),
+                "reason": st.get("reason"),
+                "message": truncate_text(st.get("message"), max_chars=200),
+            }
+
+        items = self._collect_items(pods, max_items=cfg.max_name_list, build=build_item)
         fid = stable_id("kube_system_pods_not_running", json_dumps(items))
         return [
             {
@@ -441,7 +472,7 @@ class Inspector:
                 "symptom": f"kube-system 存在 {len(pods)} 个 Pod 非 Running/Succeeded",
                 "evidence": [Evidence(kind="pod", ref={"pods": items}, message="kube-system Pod 异常相位").to_dict()],
                 "focus_refs": [
-                    FocusRef(kind="Pod", namespace=items[0].get("namespace"), name=items[0].get("name")).to_dict()
+                    FocusRef(kind="Pod", namespace="kube-system", name=items[0].get("name")).to_dict()
                 ]
                 if items and items[0].get("name")
                 else [],
@@ -479,23 +510,21 @@ class Inspector:
         cfg = self.config
         deps = _pagination_loop(list_func=self.apps.list_deployment_for_all_namespaces, limit=200, max_items=cfg.max_items_scanned)
         stats["scanned"]["deployments"] = len(deps)
-        bad: list[dict[str, Any]] = []
-        for d in deps:
-            dd = self.api_client.sanitize_for_serialization(d)
+        def build_item(d: Any, dd: dict[str, Any], meta: dict[str, Any]) -> Optional[dict[str, Any]]:
             spec = dd.get("spec") or {}
             st = dd.get("status") or {}
             desired = spec.get("replicas") or 0
             available = st.get("availableReplicas") or 0
             if desired > 0 and available != desired:
-                meta = dd.get("metadata") or {}
-                bad.append(
-                    {
-                        "namespace": meta.get("namespace"),
-                        "name": meta.get("name"),
-                        "desired": desired,
-                        "available": available,
-                    }
-                )
+                return {
+                    "namespace": self._meta_namespace(meta, d),
+                    "name": self._meta_name(meta, d),
+                    "desired": desired,
+                    "available": available,
+                }
+            return None
+
+        bad = self._collect_items(deps, max_items=len(deps), build=build_item)
         if not bad:
             return []
         items = bad[: cfg.max_name_list]
@@ -521,16 +550,21 @@ class Inspector:
         cfg = self.config
         sts = _pagination_loop(list_func=self.apps.list_stateful_set_for_all_namespaces, limit=200, max_items=cfg.max_items_scanned)
         stats["scanned"]["statefulsets"] = len(sts)
-        bad: list[dict[str, Any]] = []
-        for s in sts:
-            sd = self.api_client.sanitize_for_serialization(s)
+        def build_item(s: Any, sd: dict[str, Any], meta: dict[str, Any]) -> Optional[dict[str, Any]]:
             spec = sd.get("spec") or {}
             st = sd.get("status") or {}
             desired = spec.get("replicas") or 0
             ready = st.get("readyReplicas") or 0
             if desired > 0 and ready != desired:
-                meta = sd.get("metadata") or {}
-                bad.append({"namespace": meta.get("namespace"), "name": meta.get("name"), "desired": desired, "ready": ready})
+                return {
+                    "namespace": self._meta_namespace(meta, s),
+                    "name": self._meta_name(meta, s),
+                    "desired": desired,
+                    "ready": ready,
+                }
+            return None
+
+        bad = self._collect_items(sts, max_items=len(sts), build=build_item)
         if not bad:
             return []
         items = bad[: cfg.max_name_list]
@@ -556,15 +590,20 @@ class Inspector:
         cfg = self.config
         dss = _pagination_loop(list_func=self.apps.list_daemon_set_for_all_namespaces, limit=200, max_items=cfg.max_items_scanned)
         stats["scanned"]["daemonsets"] = len(dss)
-        bad: list[dict[str, Any]] = []
-        for d in dss:
-            dd = self.api_client.sanitize_for_serialization(d)
+        def build_item(d: Any, dd: dict[str, Any], meta: dict[str, Any]) -> Optional[dict[str, Any]]:
             st = dd.get("status") or {}
             desired = st.get("desiredNumberScheduled") or 0
             available = st.get("numberAvailable") or 0
             if desired > 0 and available != desired:
-                meta = dd.get("metadata") or {}
-                bad.append({"namespace": meta.get("namespace"), "name": meta.get("name"), "desired": desired, "available": available})
+                return {
+                    "namespace": self._meta_namespace(meta, d),
+                    "name": self._meta_name(meta, d),
+                    "desired": desired,
+                    "available": available,
+                }
+            return None
+
+        bad = self._collect_items(dss, max_items=len(dss), build=build_item)
         if not bad:
             return []
         items = bad[: cfg.max_name_list]
@@ -590,16 +629,21 @@ class Inspector:
         cfg = self.config
         rss = _pagination_loop(list_func=self.apps.list_replica_set_for_all_namespaces, limit=200, max_items=min(cfg.max_items_scanned, 1000))
         stats["scanned"]["replicasets"] = len(rss)
-        bad: list[dict[str, Any]] = []
-        for r in rss:
-            rd = self.api_client.sanitize_for_serialization(r)
+        def build_item(r: Any, rd: dict[str, Any], meta: dict[str, Any]) -> Optional[dict[str, Any]]:
             spec = rd.get("spec") or {}
             st = rd.get("status") or {}
             desired = spec.get("replicas") or 0
             ready = st.get("readyReplicas") or 0
             if desired > 0 and ready != desired:
-                meta = rd.get("metadata") or {}
-                bad.append({"namespace": meta.get("namespace"), "name": meta.get("name"), "desired": desired, "ready": ready})
+                return {
+                    "namespace": self._meta_namespace(meta, r),
+                    "name": self._meta_name(meta, r),
+                    "desired": desired,
+                    "ready": ready,
+                }
+            return None
+
+        bad = self._collect_items(rss, max_items=len(rss), build=build_item)
         if not bad:
             return []
         items = bad[: cfg.max_name_list]
@@ -621,14 +665,14 @@ class Inspector:
         cfg = self.config
         jobs = _pagination_loop(list_func=self.batch.list_job_for_all_namespaces, limit=200, max_items=cfg.max_items_scanned)
         stats["scanned"]["jobs"] = len(jobs)
-        bad: list[dict[str, Any]] = []
-        for j in jobs:
-            jd = self.api_client.sanitize_for_serialization(j)
+        def build_item(j: Any, jd: dict[str, Any], meta: dict[str, Any]) -> Optional[dict[str, Any]]:
             st = jd.get("status") or {}
             failed = st.get("failed") or 0
             if failed and failed > 0:
-                meta = jd.get("metadata") or {}
-                bad.append({"namespace": meta.get("namespace"), "name": meta.get("name"), "failed": failed})
+                return {"namespace": self._meta_namespace(meta, j), "name": self._meta_name(meta, j), "failed": failed}
+            return None
+
+        bad = self._collect_items(jobs, max_items=len(jobs), build=build_item)
         if not bad:
             return []
         items = bad[: cfg.max_name_list]
@@ -664,8 +708,8 @@ class Inspector:
             pd = self.api_client.sanitize_for_serialization(p)
             meta = pd.get("metadata") or {}
             st = pd.get("status") or {}
-            ns = meta.get("namespace")
-            name = meta.get("name")
+            ns = self._meta_namespace(meta, p)
+            name = self._meta_name(meta, p)
             derived = self._abnormal_pod_reason(pd)
             if not derived:
                 continue
@@ -751,12 +795,14 @@ class Inspector:
         if self._allowed(permissions, group="", resource="persistentvolumeclaims", verb="list"):
             pvcs = _pagination_loop(list_func=self.core.list_persistent_volume_claim_for_all_namespaces, limit=200, max_items=cfg.max_items_scanned)
             stats["scanned"]["pvcs"] = len(pvcs)
-            for p in pvcs:
-                d = self.api_client.sanitize_for_serialization(p)
+            def build_item(p: Any, d: dict[str, Any], meta: dict[str, Any]) -> Optional[dict[str, Any]]:
                 st = d.get("status") or {}
-                if st.get("phase") != "Bound":
-                    meta = d.get("metadata") or {}
-                    pvc_pending.append({"namespace": meta.get("namespace"), "name": meta.get("name"), "phase": st.get("phase")})
+                phase = st.get("phase")
+                if phase != "Bound":
+                    return {"namespace": self._meta_namespace(meta, p), "name": self._meta_name(meta, p), "phase": phase}
+                return None
+
+            pvc_pending = self._collect_items(pvcs, max_items=len(pvcs), build=build_item)
         else:
             findings.append(self._missing_perm_finding("persistentvolumeclaims/list"))
 
@@ -764,13 +810,14 @@ class Inspector:
         if self._allowed(permissions, group="", resource="persistentvolumes", verb="list"):
             pvs = _pagination_loop(list_func=self.core.list_persistent_volume, limit=200, max_items=cfg.max_items_scanned)
             stats["scanned"]["pvs"] = len(pvs)
-            for p in pvs:
-                d = self.api_client.sanitize_for_serialization(p)
+            def build_item(p: Any, d: dict[str, Any], meta: dict[str, Any]) -> Optional[dict[str, Any]]:
                 st = d.get("status") or {}
                 phase = st.get("phase")
                 if phase != "Bound":
-                    meta = d.get("metadata") or {}
-                    pv_not_bound.append({"name": meta.get("name"), "phase": phase})
+                    return {"name": self._meta_name(meta, p), "phase": phase}
+                return None
+
+            pv_not_bound = self._collect_items(pvs, max_items=len(pvs), build=build_item)
         else:
             findings.append(self._missing_perm_finding("persistentvolumes/list"))
 
@@ -812,12 +859,16 @@ class Inspector:
             rqs = _pagination_loop(list_func=self.core.list_resource_quota_for_all_namespaces, limit=200, max_items=cfg.max_items_scanned)
             stats["scanned"]["resourcequotas"] = len(rqs)
             if rqs:
-                items: list[dict[str, Any]] = []
-                for rq in rqs[: cfg.max_name_list]:
-                    d = self.api_client.sanitize_for_serialization(rq)
-                    meta = d.get("metadata") or {}
+                def build_item(rq: Any, d: dict[str, Any], meta: dict[str, Any]) -> dict[str, Any]:
                     st = d.get("status") or {}
-                    items.append({"namespace": meta.get("namespace"), "name": meta.get("name"), "used": st.get("used"), "hard": st.get("hard")})
+                    return {
+                        "namespace": self._meta_namespace(meta, rq),
+                        "name": self._meta_name(meta, rq),
+                        "used": st.get("used"),
+                        "hard": st.get("hard"),
+                    }
+
+                items = self._collect_items(rqs, max_items=cfg.max_name_list, build=build_item)
                 fid = stable_id("resourcequota_present", json_dumps(items))
                 findings.append(
                     {
@@ -837,11 +888,10 @@ class Inspector:
             lrs = _pagination_loop(list_func=self.core.list_limit_range_for_all_namespaces, limit=200, max_items=cfg.max_items_scanned)
             stats["scanned"]["limitranges"] = len(lrs)
             if lrs:
-                items: list[dict[str, Any]] = []
-                for lr in lrs[: cfg.max_name_list]:
-                    d = self.api_client.sanitize_for_serialization(lr)
-                    meta = d.get("metadata") or {}
-                    items.append({"namespace": meta.get("namespace"), "name": meta.get("name")})
+                def build_item(lr: Any, d: dict[str, Any], meta: dict[str, Any]) -> dict[str, Any]:
+                    return {"namespace": self._meta_namespace(meta, lr), "name": self._meta_name(meta, lr)}
+
+                items = self._collect_items(lrs, max_items=cfg.max_name_list, build=build_item)
                 fid = stable_id("limitrange_present", json_dumps(items))
                 findings.append(
                     {

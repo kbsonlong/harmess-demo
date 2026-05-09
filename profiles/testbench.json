@@ -3,7 +3,7 @@
   "supervisor_prompt_path": "../prompts/testbench/supervisor.md",
   "infra_expert_prompt_path": "../prompts/testbench/infra_expert.md",
   "fault_expert_prompt_path": "../prompts/testbench/fault_expert.md",
-  "initial_user_message": "对 Kubernetes 集群做巡检与健康检查,如果有异常,请报告异常信息并提供修复方案",
+  "initial_user_message": "命名空间sltrd 下 trade-plugin-trade-plugin-dev-sglqt 服务异常,请诊断并给出修复方案",
   "recursion_limit": 200,
-  "include_subagents": ["infra_expert", "fault_expert"]
+  "include_subagents": ["fault_expert"]
 }

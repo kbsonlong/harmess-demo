@@ -27,6 +27,7 @@
 - `run_supervisor()` 已恢复统一 Token 统计与 `reports/token_usage-<thread_id>.json` 落盘；`testbench` profile/prompts 与 `test.py` 默认 prompts 已对齐为同一套文案
 - kind_demo.py/gitops_demo.py 默认使用项目内 `.demo/kubeconfig`（未设置 `KUBECONFIG` 时自动注入），绕过 `~/.kube/config` 写限制；Kind demo 仍需给 Kind 节点补 `biz.type=common` 标签后才能调度 `k8s-sandbox`
 - `sandbox_inspector._check_pods()` 已修复为扫描所有非 `Succeeded` Pod 后再过滤异常，避免漏报 `phase=Running` 但容器处于 `CrashLoopBackOff` 的场景；Kind demo 二次验证已确认修复生效
+- `sandbox_inspector` 对命名空间级别资源输出强制携带 namespace：kube-system 检查直接写入 kube-system，其余从对象 metadata.namespace 兜底，避免 focus 阶段歧义/猜测
 - 日志写入 VictoriaLogs 统一走 `/insert/jsonline`，容器日志由 Fluent Bit 发出，Events 由 event-exporter webhook 直推
 
 ## 未决事项
