@@ -14,11 +14,11 @@ class TestRuntimePermissions(TestCase):
         backend = LocalShellBackend(root_dir=paths.project_dir, env=os.environ.copy(), virtual_mode=True)
         with patch("agent_core.runtime.create_deep_agent") as p:
             create_supervisor_agent(
-                llm=object(),
+                supervisor_llm=object(),
+                subagent_llm=object(),
                 paths=paths,
                 supervisor_prompt="x",
                 backend=backend,
             )
             kwargs = p.call_args.kwargs
             self.assertNotIn("permissions", kwargs)
-

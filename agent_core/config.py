@@ -26,10 +26,15 @@ def _require_env(name: str) -> str:
     return value
 
 
-def create_llm_from_env() -> ChatOpenAI:
+def create_llm_from_env(*, prefix: str | None = None) -> ChatOpenAI:
+    p = (prefix or "").strip().upper()
+    if p:
+        api_key = os.environ.get(f"{p}_API_KEY") or _require_env("API_KEY")
+        base_url = os.environ.get(f"{p}_API_BASE") or _require_env("API_BASE")
+        model = os.environ.get(f"{p}_MODEL") or _require_env("MODEL")
+        return ChatOpenAI(api_key=api_key, model=model, base_url=base_url)
     return ChatOpenAI(
         api_key=_require_env("API_KEY"),
         model=_require_env("MODEL"),
         base_url=_require_env("API_BASE"),
     )
-

@@ -26,7 +26,7 @@ def build_dev01_supervisor_prompt() -> str:
 ## 2. 严格工作流（不可跳过）
 
 ### 第一阶段：规划与落盘
-*   **规划**：先调度 `planner` 输出路径选择与任务清单（基于管理员预设工作流程 + 用户意图）。
+*   **规划**：你必须基于管理员预设工作流程 + 用户意图输出路径选择与任务清单。
 *   **落盘 TODO**：调用 `write_todos` 初始化所有任务项，写入 `/reports/todos.json`。
 
 ### 第二阶段：执行取证与诊断
@@ -85,7 +85,8 @@ def main():
     backend = LocalShellBackend(root_dir=project_dir, env=current_env, virtual_mode=True)
     checkpointer = MemorySaver()
 
-    llm = create_llm_from_env()
+    supervisor_llm = create_llm_from_env(prefix="SUPERVISOR")
+    subagent_llm = create_llm_from_env(prefix="SUBAGENT")
 
     profile_path = os.environ.get("AGENT_PROFILE_PATH")
     profile_name = os.environ.get("AGENT_PROFILE") or "testbench"
@@ -93,10 +94,10 @@ def main():
 
     supervisor_prompt = profile.supervisor_prompt or build_dev01_supervisor_prompt()
     agent = create_supervisor_agent(
-        llm=llm,
+        supervisor_llm=supervisor_llm,
+        subagent_llm=subagent_llm,
         paths=paths,
         supervisor_prompt=supervisor_prompt,
-        planner_prompt=profile.planner_prompt,
         executor_prompt=profile.executor_prompt,
         validator_prompt=profile.validator_prompt,
         workflow_md=profile.workflow_md,

@@ -11,7 +11,7 @@ This is a Kubernetes cluster inspection and health-check system that uses a mult
 Project-specific definitions for the “Harness 五子系统模型” live in `AGENTS.md` (root) and `docs/PROGRESS.md`.
 
 **Key Architecture:**
-- **Multi-agent system**: Supervisor (Coordinator) orchestrates three sub-agents: planner → executor → validator, enforcing a strict workflow (plan → execute → validate → aggregate → report)
+- **Multi-agent system**: Supervisor (Coordinator) performs planning & summarization, and orchestrates two sub-agents: executor → validator, enforcing a strict workflow (plan → execute → validate → aggregate → report)
 - **Sandbox execution**: All cluster inspection commands run through `k8s_sandbox.exec_in_sandbox()` which executes inside privileged sandbox pods with read-only RBAC
 - **Structured inspection**: The `sandbox_inspector` module performs comprehensive health checks and outputs JSON with severity-graded findings (P0/P1/P2)
 - **Skills system**: Domain knowledge is stored in `skills/k8s-inspector/SKILL.md` which agents use to guide inspection procedures
@@ -79,7 +79,7 @@ kubectl apply -f k8s-sandbox.yaml
 
 The system enforces a strict 4-step workflow that agents cannot bypass:
 1. **Task planning**: Supervisor writes detailed TODOs to `reports/todos.json`
-2. **Task assignment**: Supervisor delegates to expert sub-agents based on their expertise
+2. **Plan/Execute/Validate**: Supervisor plans tasks, then orchestrates `executor → validator` to produce evidence and validation outcomes
 3. **Data aggregation**: Results collected in `reports/internal_states.json`
 4. **Final delivery**: Report generated only after all TODOs marked `completed`
 
@@ -164,6 +164,9 @@ The system uses read-only RBAC for sandbox pods:
 - `SANDBOX_NAMESPACE`: Default namespace for sandbox operations (default: "default")
 - `SANDBOX_INSECURE_SKIP_TLS_VERIFY`: Skip TLS verification (set to "1" for self-signed certs)
 - `SANDBOX_PREFER_KUBECONFIG`: Prefer kubeconfig over in-cluster config (set to "1" if needed)
+- `SUPERVISOR_API_KEY` / `SUPERVISOR_API_BASE` / `SUPERVISOR_MODEL`: Supervisor 大模型配置（规划与总结）
+- `SUBAGENT_API_KEY` / `SUBAGENT_API_BASE` / `SUBAGENT_MODEL`: 子智能体小模型配置（executor/validator）
+- `API_KEY` / `API_BASE` / `MODEL`: 兜底默认模型配置（当 SUPERVISOR_* 或 SUBAGENT_* 未设置时回退）
 - `WECOM_WEBHOOK_URL`: 企业微信机器人 Webhook 地址；当巡检报告（reports/inspection_report-*.md）生成后，自动推送 Markdown 消息
 - `AGENT_PROFILE`: 选择 profiles/<name>.json（默认 default）
 - `AGENT_PROFILE_PATH`: 直接指定 profile JSON 的绝对路径；优先级高于 AGENT_PROFILE

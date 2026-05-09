@@ -1,11 +1,10 @@
 {
   "name": "default",
   "supervisor_prompt_path": "../prompts/default/supervisor.md",
-  "planner_prompt_path": "../prompts/default/planner.md",
   "executor_prompt_path": "../prompts/default/executor.md",
   "validator_prompt_path": "../prompts/default/validator.md",
   "workflow_md_path": "../prompts/default/workflow.md",
   "initial_user_message": "对 Kubernetes 集群做巡检与健康检查,如果有异常,请报告异常信息并提供修复方案",
   "recursion_limit": 150,
-  "include_subagents": ["planner", "executor", "validator"]
+  "include_subagents": ["executor", "validator"]
 }

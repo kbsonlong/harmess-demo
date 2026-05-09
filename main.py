@@ -13,7 +13,8 @@ def main():
     load_dotenv(override=True)
     project_dir = os.path.dirname(os.path.abspath(__file__))
     paths = get_project_paths(project_dir)
-    llm = create_llm_from_env()
+    supervisor_llm = create_llm_from_env(prefix="SUPERVISOR")
+    subagent_llm = create_llm_from_env(prefix="SUBAGENT")
     profile_path = os.environ.get("AGENT_PROFILE_PATH")
     profile_name = os.environ.get("AGENT_PROFILE") or "default"
     profile = (
@@ -21,10 +22,10 @@ def main():
     )
     supervisor_prompt = profile.supervisor_prompt or build_supervisor_prompt(paths)
     agent = create_supervisor_agent(
-        llm=llm,
+        supervisor_llm=supervisor_llm,
+        subagent_llm=subagent_llm,
         paths=paths,
         supervisor_prompt=supervisor_prompt,
-        planner_prompt=profile.planner_prompt,
         executor_prompt=profile.executor_prompt,
         validator_prompt=profile.validator_prompt,
         workflow_md=profile.workflow_md,

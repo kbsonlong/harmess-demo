@@ -10,7 +10,6 @@ from .config import ProjectPaths
 class AgentProfile:
     name: str
     supervisor_prompt: Optional[str]
-    planner_prompt: Optional[str]
     executor_prompt: Optional[str]
     validator_prompt: Optional[str]
     workflow_md: Optional[str]
@@ -36,14 +35,12 @@ def load_profile_from_path(profile_path: Path) -> AgentProfile:
     data = json.loads(profile_path.read_text(encoding="utf-8", errors="replace"))
     base_dir = profile_path.parent
     supervisor_path = _resolve_path(base_dir, data.get("supervisor_prompt_path"))
-    planner_path = _resolve_path(base_dir, data.get("planner_prompt_path"))
     executor_path = _resolve_path(base_dir, data.get("executor_prompt_path"))
     validator_path = _resolve_path(base_dir, data.get("validator_prompt_path"))
     workflow_path = _resolve_path(base_dir, data.get("workflow_md_path"))
     return AgentProfile(
         name=str(data.get("name") or profile_path.stem),
         supervisor_prompt=_read_text(supervisor_path) if supervisor_path and supervisor_path.exists() else None,
-        planner_prompt=_read_text(planner_path) if planner_path and planner_path.exists() else None,
         executor_prompt=_read_text(executor_path) if executor_path and executor_path.exists() else None,
         validator_prompt=_read_text(validator_path) if validator_path and validator_path.exists() else None,
         workflow_md=_read_text(workflow_path) if workflow_path and workflow_path.exists() else None,
@@ -59,7 +56,6 @@ def load_profile(paths: ProjectPaths, profile_name: str) -> AgentProfile:
         return AgentProfile(
             name=profile_name,
             supervisor_prompt=None,
-            planner_prompt=None,
             executor_prompt=None,
             validator_prompt=None,
             workflow_md=None,

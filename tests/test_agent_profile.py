@@ -21,7 +21,6 @@ class TestAgentProfile(TestCase):
             (base / "prompts").mkdir(parents=True, exist_ok=True)
             (base / "profiles").mkdir(parents=True, exist_ok=True)
             (base / "prompts" / "s.md").write_text("hello", encoding="utf-8")
-            (base / "prompts" / "planner.md").write_text("plan", encoding="utf-8")
             (base / "prompts" / "executor.md").write_text("exec", encoding="utf-8")
             (base / "prompts" / "validator.md").write_text("val", encoding="utf-8")
             (base / "prompts" / "wf.md").write_text("workflow", encoding="utf-8")
@@ -31,13 +30,12 @@ class TestAgentProfile(TestCase):
                     {
                         "name": "x",
                         "supervisor_prompt_path": "../prompts/s.md",
-                        "planner_prompt_path": "../prompts/planner.md",
                         "executor_prompt_path": "../prompts/executor.md",
                         "validator_prompt_path": "../prompts/validator.md",
                         "workflow_md_path": "../prompts/wf.md",
                         "initial_user_message": "hi",
                         "recursion_limit": 7,
-                        "include_subagents": ["planner", "executor", "validator"],
+                        "include_subagents": ["executor", "validator"],
                     }
                 ),
                 encoding="utf-8",
@@ -45,10 +43,9 @@ class TestAgentProfile(TestCase):
             p = load_profile_from_path(profile_path)
             self.assertEqual(p.name, "x")
             self.assertEqual(p.supervisor_prompt, "hello")
-            self.assertEqual(p.planner_prompt, "plan")
             self.assertEqual(p.executor_prompt, "exec")
             self.assertEqual(p.validator_prompt, "val")
             self.assertEqual(p.workflow_md, "workflow")
             self.assertEqual(p.initial_user_message, "hi")
             self.assertEqual(p.recursion_limit, 7)
-            self.assertEqual(p.include_subagents, ["planner", "executor", "validator"])
+            self.assertEqual(p.include_subagents, ["executor", "validator"])

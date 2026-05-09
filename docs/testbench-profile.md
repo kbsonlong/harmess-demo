@@ -29,8 +29,8 @@ AGENT_PROFILE_PATH=/abs/path/to/profile.json uv run python test.py
 
 ## testbench 的设计目标
 
-- 使用三子智能体分工：`planner` + `executor` + `validator`
-- Supervisor 只做协调闭环（规划→落盘 TODO→执行取证→校验准出→汇总→报告）
+- 使用双子智能体分工：`executor` + `validator`
+- Supervisor 负责规划与协调闭环（规划→落盘 TODO→执行取证→校验准出→汇总→报告）
 - 输出契约更硬：必须包含编号证据（E1/E2...）/根因假设/修复建议（需人工确认）/验证点，并限制证据体量
 
 ## 何时同步到 main
@@ -45,7 +45,7 @@ AGENT_PROFILE_PATH=/abs/path/to/profile.json uv run python test.py
 
 1. 将 `prompts/testbench/` 中需要固化的内容合并到默认 prompts：
    - `prompts/supervisor.md`
-   - `prompts/infra_expert.md`
-   - 如需保留 fault_expert 模式：更新 `profiles/default.json` 的 include_subagents 并补齐 `fault_expert_prompt_path`
+   - `prompts/executor.md`
+   - `prompts/validator.md`
 2. 保持 profiles/default.json 的 subagent 集合与 main.py 行为一致
 3. 更新 `docs/` 中的评审/优化记录（可复用模板）
